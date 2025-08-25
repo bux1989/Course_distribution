@@ -1,14 +1,11 @@
-# Element component starter
 
-This is an element for [weweb.io](https://www.weweb.io/).
+  # Course Enrollment Distribution System (Copy)
 
-## Installation
+  This is a code bundle for Course Enrollment Distribution System (Copy). The original project is available at https://www.figma.com/design/cs23tp7lCrWhcwoTvRoPgl/Course-Enrollment-Distribution-System--Copy-.
 
-To run locally, first install all dependencies with `yarn` or `npm i`
+  ## Running the code
 
-## Start
+  Run `npm i` to install the dependencies.
 
-To serve locally, run `yarn serve --port=[PORT]` or `npm run serve --port=[PORT]`, and then go to Weweb editor, open developper popup and add your custom element.
-
-## Build
-Before release, you can check build error by running `yarn build --name=my-element`
+  Run `npm run dev` to start the development server.
+  
