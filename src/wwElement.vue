@@ -5,13 +5,13 @@
       <div class="course-distribution__header-left">
         <h1 class="course-distribution__title">Course Enrollment</h1>
         <h2 class="course-distribution__subtitle">
-          {{ currentSemester || '—' }} – {{ selectedDayName }}
-        </h2>
-      </div>
+            {{ currentSemester || '—' }} – {{ selectedDayName }}
+          </h2>
+        </div>
       <div class="course-distribution__header-right">
         <!-- Reset to First Choices Button -->
         <button
-          @click="onResetToFirstChoices"
+          @click="autoEnrollStudents"
           class="course-distribution__reset-btn"
           title="Reset all students to their first choice preferences"
         >
@@ -34,8 +34,8 @@
         <!-- Semester Selector -->
         <div class="course-distribution__semester-selector">
           <select
-            :value="selectedSemesterIndex"
-            @change="onSemesterChange($event.target.value)"
+            v-model="selectedSemesterIndex"
+            @change="onSemesterChange"
             class="course-distribution__semester-select"
           >
             <option
@@ -50,19 +50,21 @@
 
         <div class="course-distribution__day-selector">
           <select
-            :value="selectedDayNumber"
+            :value="selectedDayIndex"
             @change="onDayChange($event.target.value)"
             class="course-distribution__day-select"
           >
             <option
-              v-for="day in daysOfWeek"
-              :key="day.day_id"
-              :value="day.day_number"
+              v-for="(day, index) in (currentSemesterData?.schedule || [])"
+              :key="index"
+              :value="index"
             >
-              {{ day.name_en }}
+              {{ day.day.slice(0, 3) }}
             </option>
           </select>
         </div>
+
+
       </div>
     </div>
 
@@ -79,8 +81,8 @@
           <svg class="course-distribution__problems-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.464 0L4.35 16.5c-.77.833.192 2.5 1.732 2.5z" />
           </svg>
-          Problems Requiring Resolution ({{ unresolvedProblems.length }})
-        </h3>
+            Problems Requiring Resolution ({{ unresolvedProblems.length }})
+          </h3>
         <div class="course-distribution__problems-list">
           <div 
             v-for="note in unresolvedProblems" 
@@ -130,85 +132,86 @@
           </div>
 
           <!-- Student rows -->
-          <div v-for="student in waitingListStudents" :key="student.id + '-' + selectedDayNumber" class="course-distribution__waiting-list-row">
+          <div v-for="student in waitingListStudents" :key="student.id + '-' + selectedDayIndex" class="course-distribution__waiting-list-row">
             <div class="course-distribution__waiting-list-col course-distribution__waiting-list-col--participants">
               <span class="course-distribution__waiting-list-student-name">{{ student.class }} {{ student.name }}</span>
               <div class="course-distribution__waiting-list-student-schedule">
-                <span 
-                  v-for="(enrollment, dayIndex) in student.enrollments" 
-                  :key="dayIndex"
-                  class="course-distribution__waiting-list-schedule-chip"
-                >
+                                                  <span
+                    v-for="(enrollment, dayIndex) in student.enrollments" 
+                    :key="dayIndex"
+                    class="course-distribution__waiting-list-schedule-chip course-distribution__schedule-chip--clickable"
+                    @click="openScheduleModal(student.id, enrollment || 'go-home', dayIndex, getDayName(dayIndex), enrollment || 'go-home', $event)"
+                  >
                   {{ getDayName(dayIndex) }} ({{ parseInt(dayIndex) + 1 }}): {{ enrollment || 'Home' }}
                 </span>
-              </div>
-            </div>
+                  </div>
+                </div>
 
                                                    <div class="course-distribution__waiting-list-col course-distribution__waiting-list-col--wish">
-                <button
-                  v-if="student.first_choice"
+                  <button
+                    v-if="student.first_choice"
                   class="course-distribution__waiting-list-preference-btn"
-                  :class="[
-                    isCurrentChoice(student, 1) ? 'course-distribution__waiting-list-preference-btn--first-choice' : '',
-                    student.first_choice === 'go-home' ? 'course-distribution__waiting-list-preference-btn--go-home' : '',
-                    isLockedTarget(student.first_choice) ? 'course-distribution__waiting-list-preference-btn--locked' : ''
-                  ]"
-                  :disabled="isCurrentChoice(student, 1) || isLockedTarget(student.first_choice)"
-                  @click="!isCurrentChoice(student, 1) && !isLockedTarget(student.first_choice) && onStudentMove(student.id, student.first_choice)"
-                  :title="isLockedTarget(student.first_choice) ? 'Course locked' : formatPreferenceDisplay(student.first_choice)"
-                >
-                  {{ formatPreferenceDisplay(student.first_choice) }}
-                </button>
-              </div>
+                                         :class="[
+                     isCurrentChoice(student, 1) ? 'course-distribution__waiting-list-preference-btn--first-choice' : '',
+                     student.first_choice === 'go-home' ? 'course-distribution__waiting-list-preference-btn--go-home' : '',
+                     isLockedTarget(student.first_choice) ? 'course-distribution__waiting-list-preference-btn--locked' : ''
+                     ]"
+                     :disabled="isCurrentChoice(student, 1) || isLockedTarget(student.first_choice)"
+                     @click="!isCurrentChoice(student, 1) && !isLockedTarget(student.first_choice) && onStudentMove(student.id, student.first_choice)"
+                     :title="isLockedTarget(student.first_choice) ? 'Course is marked as closed' : formatPreferenceDisplay(student.first_choice)"
+                  >
+                    {{ formatPreferenceDisplay(student.first_choice) }}
+                  </button>
+                </div>
 
                                                    <div class="course-distribution__waiting-list-col course-distribution__waiting-list-col--wish">
-                <button
-                  v-if="student.second_choice"
+                  <button
+                    v-if="student.second_choice"
                   class="course-distribution__waiting-list-preference-btn"
-                  :class="[
-                    isCurrentChoice(student, 2) ? 'course-distribution__waiting-list-preference-btn--second-choice' : '',
-                    student.second_choice === 'go-home' ? 'course-distribution__waiting-list-preference-btn--go-home' : '',
-                    isLockedTarget(student.second_choice) ? 'course-distribution__waiting-list-preference-btn--locked' : ''
-                  ]"
-                  :disabled="isCurrentChoice(student, 2) || isLockedTarget(student.second_choice)"
-                  @click="!isCurrentChoice(student, 2) && !isLockedTarget(student.second_choice) && onStudentMove(student.id, student.second_choice)"
-                  :title="isLockedTarget(student.second_choice) ? 'Course locked' : formatPreferenceDisplay(student.second_choice)"
-                >
-                  {{ formatPreferenceDisplay(student.second_choice) }}
-                </button>
-              </div>
+                                         :class="[
+                     isCurrentChoice(student, 2) ? 'course-distribution__waiting-list-preference-btn--second-choice' : '',
+                     student.second_choice === 'go-home' ? 'course-distribution__waiting-list-preference-btn--go-home' : '',
+                     isLockedTarget(student.second_choice) ? 'course-distribution__waiting-list-preference-btn--locked' : ''
+                     ]"
+                     :disabled="isCurrentChoice(student, 2) || isLockedTarget(student.second_choice)"
+                     @click="!isCurrentChoice(student, 2) && !isLockedTarget(student.second_choice) && onStudentMove(student.id, student.second_choice)"
+                     :title="isLockedTarget(student.second_choice) ? 'Course is marked as closed' : formatPreferenceDisplay(student.second_choice)"
+                  >
+                    {{ formatPreferenceDisplay(student.second_choice) }}
+                  </button>
+                </div>
 
                                                    <div class="course-distribution__waiting-list-col course-distribution__waiting-list-col--wish">
-                <button
-                  v-if="student.third_choice"
+                  <button
+                    v-if="student.third_choice"
                   class="course-distribution__waiting-list-preference-btn"
-                  :class="[
-                    isCurrentChoice(student, 3) ? 'course-distribution__waiting-list-preference-btn--third-choice' : '',
-                    student.third_choice === 'go-home' ? 'course-distribution__waiting-list-preference-btn--go-home' : '',
-                    isLockedTarget(student.third_choice) ? 'course-distribution__waiting-list-preference-btn--locked' : ''
-                  ]"
-                  :disabled="isCurrentChoice(student, 3) || isLockedTarget(student.third_choice)"
-                  @click="!isCurrentChoice(student, 3) && !isLockedTarget(student.third_choice) && onStudentMove(student.id, student.third_choice)"
-                  :title="isLockedTarget(student.third_choice) ? 'Course locked' : formatPreferenceDisplay(student.third_choice)"
-                >
-                  {{ formatPreferenceDisplay(student.third_choice) }}
-                </button>
-              </div>
+                                         :class="[
+                     isCurrentChoice(student, 3) ? 'course-distribution__waiting-list-preference-btn--third-choice' : '',
+                     student.third_choice === 'go-home' ? 'course-distribution__waiting-list-preference-btn--go-home' : '',
+                     isLockedTarget(student.third_choice) ? 'course-distribution__waiting-list-preference-btn--locked' : ''
+                     ]"
+                     :disabled="isCurrentChoice(student, 3) || isLockedTarget(student.third_choice)"
+                     @click="!isCurrentChoice(student, 3) && !isLockedTarget(student.third_choice) && onStudentMove(student.id, student.third_choice)"
+                     :title="isLockedTarget(student.third_choice) ? 'Course is marked as closed' : formatPreferenceDisplay(student.third_choice)"
+                  >
+                    {{ formatPreferenceDisplay(student.third_choice) }}
+                  </button>
+                </div>
 
             <div class="course-distribution__waiting-list-col course-distribution__waiting-list-col--wait">
-              <button
+                  <button
                 v-if="!hasGoHomePreference(student)"
                 class="course-distribution__waiting-list-wait-btn"
-                title="Move to waiting list"
-                @click="onStudentMove(student.id, 'waiting')"
-              >
-                W
-              </button>
+                    title="Move to waiting list"
+                    @click="onStudentMove(student.id, 'waiting')"
+                  >
+                    W
+                  </button>
               <div v-else class="course-distribution__waiting-list-wait-placeholder"></div>
             </div>
-          </div>
-        </div>
-      </div>
+                </div>
+              </div>
+            </div>
 
             <p v-if="waitingListStudents.length === 0" class="course-distribution__waiting-list-empty">No students waiting</p>
 
@@ -234,7 +237,7 @@
           >
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
           </svg>
-        </div>
+            </div>
         
         <div v-if="isGoingHomeExpanded" class="course-distribution__going-home-content">
           <!-- First Choice Go Home - Simple List -->
@@ -263,16 +266,17 @@
                       <span 
                         v-for="(enrollment, dayIndex) in student.enrollments" 
                         :key="dayIndex"
-                        class="course-distribution__going-home-schedule-chip"
+                        class="course-distribution__going-home-schedule-chip course-distribution__schedule-chip--clickable"
+                        @click="openScheduleModal(student.id, enrollment || 'go-home', dayIndex, getDayName(dayIndex), enrollment || 'go-home', $event)"
                       >
                         {{ getDayName(dayIndex) }} ({{ parseInt(dayIndex) + 1 }}): {{ enrollment || 'Home' }}
                       </span>
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
           </div>
+        </div>
+      </div>
 
           <!-- Second/Third Choice Go Home - Grid Format -->
           <div v-if="secondOrThirdChoiceGoHomeStudents.length > 0" class="course-distribution__going-home-secondary">
@@ -281,9 +285,9 @@
                 <span>Going Home as 2nd/3rd Choice</span>
                 <span class="course-distribution__going-home-secondary-badge">
                   {{ secondOrThirdChoiceGoHomeStudents.length }} children - can be reassigned
-                </span>
-              </h4>
-            </div>
+            </span>
+          </h4>
+        </div>
 
             <div v-if="isGoingHomeChildrenVisible" class="course-distribution__going-home-grid">
               <!-- Grid Header -->
@@ -308,8 +312,8 @@
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
                     </svg>
                   </button>
-                </div>
-              </div>
+            </div>
+          </div>
 
               <div v-if="secondOrThirdChoiceGoHomeStudents.length > 0" class="course-distribution__going-home-grid-rows">
                 <div 
@@ -325,74 +329,78 @@
                         <span 
                           v-for="(enrollment, dayIndex) in student.enrollments" 
                           :key="dayIndex"
-                          class="course-distribution__going-home-schedule-chip"
+                          class="course-distribution__going-home-schedule-chip course-distribution__schedule-chip--clickable"
+                          @click="openScheduleModal(student.id, enrollment || 'go-home', dayIndex, getDayName(dayIndex), enrollment || 'go-home')"
                         >
                           {{ getDayName(dayIndex) }} ({{ parseInt(dayIndex) + 1 }}): {{ enrollment || 'Home' }}
                         </span>
-                      </div>
-                    </div>
+                  </div>
+                </div>
 
                                          <!-- First Choice Column -->
                                            <div class="course-distribution__going-home-grid-col course-distribution__going-home-grid-col--wish">
-                        <button
-                          v-if="student.first_choice"
+                  <button
+                    v-if="student.first_choice"
                           class="course-distribution__going-home-preference-btn"
-                          :class="[
-                            isCurrentChoice(student, 1) ? 'course-distribution__going-home-preference-btn--first-choice' : '',
-                            student.first_choice === 'go-home' ? 'course-distribution__going-home-preference-btn--go-home' : ''
-                          ]"
-                          :disabled="isCurrentChoice(student, 1)"
-                          @click="!isCurrentChoice(student, 1) && onStudentMove(student.id, student.first_choice)"
-                          :title="formatPreferenceDisplay(student.first_choice)"
-                        >
-                          {{ formatPreferenceDisplay(student.first_choice) }}
-                        </button>
-                      </div>
-                    
+                                         :class="[
+                             isCurrentChoice(student, 1) ? 'course-distribution__going-home-preference-btn--first-choice' : '',
+                             student.first_choice === 'go-home' ? 'course-distribution__going-home-preference-btn--go-home' : '',
+                             isLockedTarget(student.first_choice) ? 'course-distribution__going-home-preference-btn--locked' : ''
+                           ]"
+                                                      :disabled="isCurrentChoice(student, 1) || isLockedTarget(student.first_choice)"
+                            @click="!isCurrentChoice(student, 1) && !isLockedTarget(student.first_choice) && onStudentMove(student.id, student.first_choice)"
+                                                      :title="isLockedTarget(student.first_choice) ? 'Course is marked as closed' : formatPreferenceDisplay(student.first_choice)"
+                  >
+                    {{ formatPreferenceDisplay(student.first_choice) }}
+                  </button>
+                </div>
+
                                          <!-- Second Choice Column -->
                                            <div class="course-distribution__going-home-grid-col course-distribution__going-home-grid-col--wish">
-                        <button
-                          v-if="student.second_choice"
+                  <button
+                    v-if="student.second_choice"
                           class="course-distribution__going-home-preference-btn"
-                          :class="[
-                            isCurrentChoice(student, 2) ? 'course-distribution__going-home-preference-btn--second-choice' : '',
-                            student.second_choice === 'go-home' ? 'course-distribution__going-home-preference-btn--go-home' : ''
-                          ]"
-                          :disabled="isCurrentChoice(student, 2)"
-                          @click="!isCurrentChoice(student, 2) && onStudentMove(student.id, student.second_choice)"
-                          :title="formatPreferenceDisplay(student.second_choice)"
-                        >
-                          {{ formatPreferenceDisplay(student.second_choice) }}
-                        </button>
-                      </div>
-                    
+                                         :class="[
+                             isCurrentChoice(student, 2) ? 'course-distribution__going-home-preference-btn--second-choice' : '',
+                             student.second_choice === 'go-home' ? 'course-distribution__going-home-preference-btn--go-home' : '',
+                             isLockedTarget(student.second_choice) ? 'course-distribution__going-home-preference-btn--locked' : ''
+                           ]"
+                                                      :disabled="isCurrentChoice(student, 2) || isLockedTarget(student.second_choice)"
+                            @click="!isCurrentChoice(student, 2) && !isLockedTarget(student.second_choice) && onStudentMove(student.id, student.second_choice)"
+                                                      :title="isLockedTarget(student.second_choice) ? 'Course is marked as closed' : formatPreferenceDisplay(student.second_choice)"
+                  >
+                    {{ formatPreferenceDisplay(student.second_choice) }}
+                  </button>
+                </div>
+
                                          <!-- Third Choice Column -->
                                            <div class="course-distribution__going-home-grid-col course-distribution__going-home-grid-col--wish">
-                        <button
-                          v-if="student.third_choice"
+                  <button
+                    v-if="student.third_choice"
                           class="course-distribution__going-home-preference-btn"
-                          :class="[
-                            isCurrentChoice(student, 3) ? 'course-distribution__going-home-preference-btn--third-choice' : '',
-                            student.third_choice === 'go-home' ? 'course-distribution__going-home-preference-btn--go-home' : ''
-                          ]"
-                          :disabled="isCurrentChoice(student, 3)"
-                          @click="!isCurrentChoice(student, 3) && onStudentMove(student.id, student.third_choice)"
-                          :title="formatPreferenceDisplay(student.third_choice)"
-                        >
-                          {{ formatPreferenceDisplay(student.third_choice) }}
-                        </button>
-                      </div>
+                                         :class="[
+                             isCurrentChoice(student, 3) ? 'course-distribution__going-home-preference-btn--third-choice' : '',
+                             student.third_choice === 'go-home' ? 'course-distribution__going-home-preference-btn--go-home' : '',
+                             isLockedTarget(student.third_choice) ? 'course-distribution__going-home-preference-btn--locked' : ''
+                           ]"
+                                                      :disabled="isCurrentChoice(student, 3) || isLockedTarget(student.third_choice)"
+                            @click="!isCurrentChoice(student, 3) && !isLockedTarget(student.third_choice) && onStudentMove(student.id, student.third_choice)"
+                                                      :title="isLockedTarget(student.third_choice) ? 'Course is marked as closed' : formatPreferenceDisplay(student.third_choice)"
+                  >
+                    {{ formatPreferenceDisplay(student.third_choice) }}
+                  </button>
+                </div>
 
                     <!-- Waiting List Column -->
                     <div class="course-distribution__going-home-grid-col course-distribution__going-home-grid-col--wait">
-                      <button
+                  <button
                         v-if="!hasGoHomePreference(student)"
                         class="course-distribution__going-home-wait-btn"
-                        @click="onStudentMove(student.id, 'waiting')"
+                    @click="onStudentMove(student.id, 'waiting')"
                         title="Move to waiting list"
-                      >
-                        W
-                      </button>
+                  >
+                    W
+                  </button>
                       <div v-else class="course-distribution__going-home-wait-placeholder"></div>
                     </div>
                   </div>
@@ -424,11 +432,11 @@
       </div>
 
       <!-- Course Sections -->
-      <div v-for="course in filteredCourses" :key="course.id" class="course-distribution__course" :class="[
-        getCourseStatus(course) === 'overfilled' ? 'course-distribution__course--overfilled' : '',
-        getCourseStatus(course) === 'near_full' ? 'course-distribution__course--near-full' : '',
-        getCourseStatus(course) === 'locked' ? 'course-distribution__course--locked' : ''
-      ]">
+             <div v-for="course in filteredCourses" :key="course.id" class="course-distribution__course" :class="[
+         getCourseStatus(course) === 'overfilled' ? 'course-distribution__course--overfilled' : '',
+         getCourseStatus(course) === 'near_full' ? 'course-distribution__course--near-full' : '',
+         course.forcedFull ? 'course-distribution__course--locked' : ''
+       ]">
         <div class="course-distribution__course-header">
           <h4 class="course-distribution__course-title">
             <button 
@@ -456,28 +464,28 @@
           </h4>
 
           <div class="course-distribution__course-actions">
-            <!-- Lock/Unlock Button -->
-            <button
-              v-if="course.is_locked"
-              class="course-distribution__course-lock-btn course-distribution__course-lock-btn--locked"
-              :title="'Click to open course'"
-              @click="onLockToggle(course.id, false)"
-            >
-              <svg class="course-distribution__course-lock-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-              </svg>
-              Closed
-            </button>
-            <button
-              v-else
-              class="course-distribution__course-lock-btn"
-              :title="'Mark as closed'"
-              @click="onLockToggle(course.id, true)"
-            >
-              <svg class="course-distribution__course-lock-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
-              </svg>
-            </button>
+                         <!-- Lock/Unlock Button -->
+             <button
+               v-if="course.forcedFull"
+               class="course-distribution__course-lock-btn course-distribution__course-lock-btn--locked"
+               :title="'Click to open course'"
+               @click="onLockToggle(course.id, false)"
+              >
+               <svg class="course-distribution__course-lock-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+               </svg>
+               Closed
+             </button>
+             <button
+               v-else
+               class="course-distribution__course-lock-btn"
+               :title="'Mark as closed'"
+               @click="onLockToggle(course.id, true)"
+              >
+               <svg class="course-distribution__course-lock-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+               </svg>
+              </button>
 
             <!-- Approval Button -->
             <button 
@@ -501,7 +509,7 @@
               <svg class="course-distribution__course-notes-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
-              <span v-if="course.notes_count" class="course-distribution__course-notes-badge">{{ course.notes_count }}</span>
+              <span v-if="course.notes && course.notes.length > 0" class="course-distribution__course-notes-badge">{{ course.notes.length }}</span>
             </button>
           </div>
         </div>
@@ -511,13 +519,16 @@
           <div class="course-distribution__course-meta">
             <span v-if="course.teacher" class="course-distribution__course-meta-item">Teacher: {{ course.teacher }}</span>
             <span v-if="course.room" class="course-distribution__course-meta-item">Room: {{ course.room }}</span>
-            <span v-if="course.grades" class="course-distribution__course-meta-item">Grades: {{ course.grades.join(', ') }}</span>
-            <div v-if="course.notes_count > 0" class="course-distribution__course-notes-indicator">
+            <span v-if="course.availableGrades" class="course-distribution__course-meta-item">Grades: {{ course.availableGrades.join(', ') }}</span>
+            <div v-if="course.notes && course.notes.length > 0" class="course-distribution__course-notes-indicator">
               <span class="course-distribution__course-notes-badge-small">
                 <svg class="course-distribution__course-notes-icon-small" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                 </svg>
-                {{ course.notes_count }} note{{ course.notes_count > 1 ? 's' : '' }}
+                {{ course.notes.length }} note{{ course.notes.length > 1 ? 's' : '' }}
+                <svg v-if="course.notes.some(note => note.isProblem && !note.isResolved)" class="course-distribution__course-notes-problem-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.464 0L4.35 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
               </span>
               <button
                 class="course-distribution__course-notes-toggle"
@@ -536,6 +547,139 @@
           </div>
         </div>
 
+        <!-- Notes Section - Only show when course details are visible and notes are toggled on -->
+        <div v-if="isCourseDetailsVisible(course.id) && isNotesVisible(course.id)" class="course-distribution__course-notes">
+          <div v-if="course.notes && course.notes.length > 0" class="course-distribution__course-notes-list">
+            <div v-for="note in course.notes" :key="note.id" class="course-distribution__course-note" :class="{
+              'course-distribution__course-note--problem': note.isProblem && !note.isResolved,
+              'course-distribution__course-note--resolved': note.isResolved,
+              'course-distribution__course-note--normal': !note.isProblem && !note.isResolved
+            }">
+              <div class="course-distribution__course-note-header">
+                <div class="course-distribution__course-note-meta">
+                  <span class="course-distribution__course-note-author">{{ note.author }}</span>
+                  <span class="course-distribution__course-note-timestamp">
+                    <svg class="course-distribution__course-note-clock-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    {{ formatTimestamp(note.timestamp) }}
+                  </span>
+                  <span v-if="note.isProblem && !note.isResolved" class="course-distribution__course-note-problem-badge">Problem</span>
+                  <span v-if="note.isResolved" class="course-distribution__course-note-resolved-badge">Resolved</span>
+                </div>
+                <div v-if="!(editingNote?.courseId === course.id && editingNote?.noteId === note.id)" class="course-distribution__course-note-actions">
+                  <button
+                    class="course-distribution__course-note-action-btn"
+                    :class="{ 'course-distribution__course-note-action-btn--problem': note.isProblem }"
+                    @click="toggleNoteProblem(course.id, note.id)"
+                    :title="note.isProblem ? 'Remove from problems' : 'Flag as problem'"
+                  >
+                    <svg class="course-distribution__course-note-action-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.464 0L4.35 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                    </svg>
+                  </button>
+                  <button
+                    v-if="note.isProblem && !note.isResolved"
+                    class="course-distribution__course-note-action-btn course-distribution__course-note-action-btn--resolve"
+                    @click="toggleProblemResolved(course.id, note.id)"
+                    title="Mark as resolved"
+                  >
+                    <svg class="course-distribution__course-note-action-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                  </button>
+                  <button
+                    class="course-distribution__course-note-action-btn course-distribution__course-note-action-btn--edit"
+                    @click="startEditNote(course.id, note.id, note.text)"
+                    title="Edit note"
+                  >
+                    <svg class="course-distribution__course-note-action-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </button>
+                  <button
+                    class="course-distribution__course-note-action-btn course-distribution__course-note-action-btn--delete"
+                    @click="confirmDelete(course.id, note.id)"
+                    title="Delete note"
+                  >
+                    <svg class="course-distribution__course-note-action-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div v-if="editingNote?.courseId === course.id && editingNote?.noteId === note.id" class="course-distribution__course-note-edit">
+                <div class="course-distribution__course-note-edit-form">
+                  <input
+                    v-model="editNoteText"
+                    class="course-distribution__course-note-edit-input"
+                    @keydown="(e) => {
+                      if (e.key === 'Enter') saveEditNote(course.id, note.id);
+                      if (e.key === 'Escape') cancelEditNote();
+                    }"
+                    autofocus
+                  />
+                  <button
+                    class="course-distribution__course-note-action-btn course-distribution__course-note-action-btn--save"
+                    @click="saveEditNote(course.id, note.id)"
+                    title="Save changes"
+                  >
+                    <svg class="course-distribution__course-note-action-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                  </button>
+                  <button
+                    class="course-distribution__course-note-action-btn course-distribution__course-note-action-btn--cancel"
+                    @click="cancelEditNote"
+                    title="Cancel editing"
+                  >
+                    <svg class="course-distribution__course-note-action-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div v-else class="course-distribution__course-note-text">
+                {{ note.text }}
+              </div>
+            </div>
+          </div>
+
+          <!-- Add Note Form -->
+          <div v-if="showAddNote[`${selectedSemesterIndex}-${selectedDayIndex}-${course.id}`]" class="course-distribution__course-note-add">
+            <div class="course-distribution__course-note-add-form">
+              <input
+                v-model="newNoteText[`${selectedSemesterIndex}-${selectedDayIndex}-${course.id}`]"
+                placeholder="Add a note..."
+                class="course-distribution__course-note-add-input"
+                @keydown="(e) => {
+                  if (e.key === 'Enter') addNote(course.id, newNoteText[`${selectedSemesterIndex}-${selectedDayIndex}-${course.id}`]);
+                  if (e.key === 'Escape') {
+                    showAddNote[`${selectedSemesterIndex}-${selectedDayIndex}-${course.id}`] = false;
+                    newNoteText[`${selectedSemesterIndex}-${selectedDayIndex}-${course.id}`] = '';
+                  }
+                }"
+                autofocus
+              />
+              <button
+                class="course-distribution__course-note-add-btn"
+                @click="addNote(course.id, newNoteText[`${selectedSemesterIndex}-${selectedDayIndex}-${course.id}`])"
+              >
+                Add
+              </button>
+              <button
+                class="course-distribution__course-note-cancel-btn"
+                @click="() => {
+                  showAddNote[`${selectedSemesterIndex}-${selectedDayIndex}-${course.id}`] = false;
+                  newNoteText[`${selectedSemesterIndex}-${selectedDayIndex}-${course.id}`] = '';
+                }"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+
         <!-- Participants Section -->
         <div class="course-distribution__course-participants">
           <!-- Header row aligned with columns + chevron -->
@@ -546,107 +690,108 @@
                <div class="course-distribution__course-participants-col course-distribution__course-participants-col--wish">2. wish</div>
                <div class="course-distribution__course-participants-col course-distribution__course-participants-col--wish">3. wish</div>
                <div class="course-distribution__course-participants-col course-distribution__course-participants-col--wait">Wait</div>
-             </div>
+            </div>
              <div class="course-distribution__course-participants-toggle-container">
-               <button
+            <button
                  class="course-distribution__course-participants-toggle"
-                 :title="isParticipantsVisible(course.id) ? 'Hide participants' : 'Show participants'"
-                 @click="toggleParticipants(course.id)"
-               >
+              :title="isParticipantsVisible(course.id) ? 'Hide participants' : 'Show participants'"
+              @click="toggleParticipants(course.id)"
+            >
                  <svg v-if="isParticipantsVisible(course.id)" class="course-distribution__course-participants-toggle-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
-                 </svg>
+              </svg>
                  <svg v-else class="course-distribution__course-participants-toggle-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                 </svg>
-               </button>
+              </svg>
+            </button>
              </div>
-           </div>
+          </div>
 
-                      <template v-if="isParticipantsVisible(course.id)">
-              <div v-for="student in (enrolledByCourseId[course.id] || [])" :key="student.id + '-' + selectedDayNumber"
+          <template v-if="isParticipantsVisible(course.id)">
+              <div v-for="student in (enrolledByCourseId[course.id] || [])" :key="student.id + '-' + selectedDayIndex"
                class="course-distribution__course-participants-row">
                <div class="course-distribution__course-participants-grid">
                  <div class="course-distribution__course-participants-col course-distribution__course-participants-col--participants">
                    <span class="course-distribution__course-participants-student-name">{{ student.class }} {{ student.name }}</span>
                    <div class="course-distribution__course-participants-student-schedule">
-                     <span 
-                       v-for="(enrollment, dayIndex) in student.enrollments" 
-                       :key="dayIndex"
-                       class="course-distribution__course-participants-schedule-chip"
-                     >
-                       {{ getDayName(dayIndex) }} ({{ parseInt(dayIndex) + 1 }}): {{ enrollment || 'Home' }}
-                     </span>
-                   </div>
-                 </div>
+                                           <span
+                        v-for="(enrollment, dayIndex) in student.enrollments" 
+                        :key="dayIndex"
+                        class="course-distribution__course-participants-schedule-chip course-distribution__schedule-chip--clickable"
+                        @click="openScheduleModal(student.id, enrollment || 'go-home', dayIndex, getDayName(dayIndex), enrollment || 'go-home', $event)"
+                      >
+                        {{ getDayName(dayIndex) }} ({{ parseInt(dayIndex) + 1 }}): {{ enrollment || 'Home' }}
+                      </span>
+                  </div>
+                </div>
 
                  <div class="course-distribution__course-participants-col course-distribution__course-participants-col--wish">
-                   <button
-                     v-if="student.first_choice"
+                  <button
+                    v-if="student.first_choice"
                      class="course-distribution__course-participants-preference-btn"
-                     :class="[
-                       isCurrentChoice(student, 1) ? 'course-distribution__course-participants-preference-btn--first-choice' : '',
-                       student.first_choice === 'go-home' ? 'course-distribution__course-participants-preference-btn--go-home' : '',
-                       isLockedTarget(student.first_choice) ? 'course-distribution__course-participants-preference-btn--locked' : ''
+                                         :class="[
+                        isCurrentChoice(student, 1) ? 'course-distribution__course-participants-preference-btn--first-choice' : '',
+                        student.first_choice === 'go-home' ? 'course-distribution__course-participants-preference-btn--go-home' : '',
+                        isLockedTarget(student.first_choice) ? 'course-distribution__course-participants-preference-btn--locked' : ''
                      ]"
                      :disabled="isCurrentChoice(student, 1) || isLockedTarget(student.first_choice)"
-                     @click="!isCurrentChoice(student, 1) && !isLockedTarget(student.first_choice) && onStudentMove(student.id, student.first_choice)"
-                     :title="isLockedTarget(student.first_choice) ? 'Course locked' : formatPreferenceDisplay(student.first_choice)"
-                   >
-                     {{ formatPreferenceDisplay(student.first_choice) }}
-                   </button>
-                 </div>
+                     @click="handleFirstChoiceClick(student)"
+                      :title="isLockedTarget(student.first_choice) ? 'Course is marked as closed' : formatPreferenceDisplay(student.first_choice)"
+                  >
+                    {{ formatPreferenceDisplay(student.first_choice) }}
+                  </button>
+                </div>
 
                  <div class="course-distribution__course-participants-col course-distribution__course-participants-col--wish">
-                   <button
-                     v-if="student.second_choice"
+                  <button
+                    v-if="student.second_choice"
                      class="course-distribution__course-participants-preference-btn"
-                     :class="[
-                       isCurrentChoice(student, 2) ? 'course-distribution__course-participants-preference-btn--second-choice' : '',
-                       student.second_choice === 'go-home' ? 'course-distribution__course-participants-preference-btn--go-home' : '',
-                       isLockedTarget(student.second_choice) ? 'course-distribution__course-participants-preference-btn--locked' : ''
+                                         :class="[
+                        isCurrentChoice(student, 2) ? 'course-distribution__course-participants-preference-btn--second-choice' : '',
+                        student.second_choice === 'go-home' ? 'course-distribution__course-participants-preference-btn--go-home' : '',
+                        isLockedTarget(student.second_choice) ? 'course-distribution__course-participants-preference-btn--locked' : ''
                      ]"
                      :disabled="isCurrentChoice(student, 2) || isLockedTarget(student.second_choice)"
-                     @click="!isCurrentChoice(student, 2) && !isLockedTarget(student.second_choice) && onStudentMove(student.id, student.second_choice)"
-                     :title="isLockedTarget(student.second_choice) ? 'Course locked' : formatPreferenceDisplay(student.second_choice)"
-                   >
-                     {{ formatPreferenceDisplay(student.second_choice) }}
-                   </button>
-                 </div>
+                     @click="handleSecondChoiceClick(student)"
+                      :title="isLockedTarget(student.second_choice) ? 'Course is marked as closed' : formatPreferenceDisplay(student.second_choice)"
+                  >
+                    {{ formatPreferenceDisplay(student.second_choice) }}
+                  </button>
+                </div>
 
                  <div class="course-distribution__course-participants-col course-distribution__course-participants-col--wish">
-                   <button
-                     v-if="student.third_choice"
+                  <button
+                    v-if="student.third_choice"
                      class="course-distribution__course-participants-preference-btn"
-                     :class="[
-                       isCurrentChoice(student, 3) ? 'course-distribution__course-participants-preference-btn--third-choice' : '',
-                       student.third_choice === 'go-home' ? 'course-distribution__course-participants-preference-btn--go-home' : '',
-                       isLockedTarget(student.third_choice) ? 'course-distribution__course-participants-preference-btn--locked' : ''
+                                         :class="[
+                        isCurrentChoice(student, 3) ? 'course-distribution__course-participants-preference-btn--third-choice' : '',
+                        student.third_choice === 'go-home' ? 'course-distribution__course-participants-preference-btn--go-home' : '',
+                        isLockedTarget(student.third_choice) ? 'course-distribution__course-participants-preference-btn--locked' : ''
                      ]"
                      :disabled="isCurrentChoice(student, 3) || isLockedTarget(student.third_choice)"
-                     @click="!isCurrentChoice(student, 3) && !isLockedTarget(student.third_choice) && onStudentMove(student.id, student.third_choice)"
-                     :title="isLockedTarget(student.third_choice) ? 'Course locked' : formatPreferenceDisplay(student.third_choice)"
-                   >
-                     {{ formatPreferenceDisplay(student.third_choice) }}
-                   </button>
-                 </div>
+                     @click="handleThirdChoiceClick(student)"
+                      :title="isLockedTarget(student.third_choice) ? 'Course is marked as closed' : formatPreferenceDisplay(student.third_choice)"
+                  >
+                    {{ formatPreferenceDisplay(student.third_choice) }}
+                  </button>
+                </div>
 
                  <div class="course-distribution__course-participants-col course-distribution__course-participants-col--wait">
-                   <button
+                  <button
                      v-if="!hasGoHomePreference(student)"
                      class="course-distribution__course-participants-wait-btn"
-                     title="Move to waiting list"
-                     @click="onStudentMove(student.id, 'waiting')"
-                   >
-                     W
-                   </button>
+                    title="Move to waiting list"
+                    @click="onStudentMove(student.id, 'waiting')"
+                  >
+                    W
+                  </button>
                    <div v-else class="course-distribution__course-participants-wait-placeholder"></div>
-                 </div>
-               </div>
+                </div>
+              </div>
                <div class="course-distribution__course-participants-spacer">
                  <!-- Empty space to match the toggle button area in the header -->
-               </div>
-             </div>
+              </div>
+            </div>
 
             <p v-if="(enrolledByCourseId[course.id] || []).length === 0" class="course-distribution__course-participants-empty">No students enrolled</p>
           </template>
@@ -654,10 +799,172 @@
       </div>
     </div>
   </div>
+
+  <!-- Schedule Popover -->
+  <div v-if="activeScheduleModal" class="course-distribution__popover-overlay" @click="closeScheduleModal">
+    <div 
+      class="course-distribution__popover" 
+      @click.stop
+      :style="{
+        left: popoverPosition.x + 'px',
+        top: popoverPosition.y + 'px',
+        transform: 'translateX(-50%)'
+      }"
+    >
+      <div class="course-distribution__modal-content">
+                  <p class="course-distribution__modal-day-title">
+            {{ activeScheduleModal.day }} - {{ activeScheduleModal.activity === 'go-home' ? 'Going Home' : getCourseName(activeScheduleModal.activity, activeScheduleModal.dayIndex) }}
+          </p>
+        
+        <!-- Current Choice Info -->
+        <div v-if="getCurrentChoice(activeScheduleModal.childId, activeScheduleModal.activity)" class="course-distribution__modal-current-choice">
+          <p class="course-distribution__modal-current-text">
+            Current: {{ getCurrentChoice(activeScheduleModal.childId, activeScheduleModal.activity).choice }} choice
+          </p>
+        </div>
+        
+        <!-- Student's Preferences -->
+        <div class="course-distribution__modal-preferences">
+          <p class="course-distribution__modal-preferences-title">Student's preferences:</p>
+          <div class="course-distribution__modal-preferences-list">
+            <div 
+              v-for="pref in getChildPreferences(activeScheduleModal.childId, activeScheduleModal.dayIndex)" 
+              :key="pref.choice"
+              class="course-distribution__modal-preference-item"
+              :class="{ 'course-distribution__modal-preference-item--active': pref.courseId === activeScheduleModal.activity }"
+            >
+              <span class="course-distribution__modal-preference-label">{{ pref.choice }}:</span>
+              <button 
+                class="course-distribution__modal-preference-badge"
+                :class="{ 
+                  'course-distribution__modal-preference-badge--active': pref.courseId === activeScheduleModal.activity,
+                  'course-distribution__modal-preference-badge--clickable': pref.courseId !== 'go-home'
+                }"
+                @click="pref.courseId !== 'go-home' && openPopoverForm(activeScheduleModal.childId, pref.courseId, activeScheduleModal.dayIndex)"
+              >
+                {{ pref.name }}
+                <span v-if="pref.courseId !== 'go-home'" class="course-distribution__modal-preference-capacity">
+                  {{ (() => {
+                    const day = currentSemesterData?.schedule[activeScheduleModal.dayIndex];
+                    const course = day?.courses.find(c => c.id === pref.courseId);
+                    return course ? `${course.enrolledChildren.length}/${course.maxCapacity}` : '';
+                  })() }}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Nested Inline Form (like React's renderPopoverInlineForm) -->
+        <div v-if="activePopoverForm && activePopoverForm.childId === activeScheduleModal.childId && activePopoverForm.dayIndex === activeScheduleModal.dayIndex" class="course-distribution__modal-inline-form">
+          <div class="course-distribution__modal-inline-form-header">
+            <div class="course-distribution__modal-inline-form-title">
+              <span class="course-distribution__modal-inline-form-course-name">{{ getCourseName(activePopoverForm.courseId, activePopoverForm.dayIndex) }}</span>
+              <span v-if="activePopoverForm.courseId !== 'go-home'" class="course-distribution__modal-inline-form-badge">
+                {{ (() => {
+                  const day = currentSemesterData?.schedule[activePopoverForm.dayIndex];
+                  const course = day?.courses.find(c => c.id === activePopoverForm.courseId);
+                  const enrolledCount = course?.enrolledChildren.length || 0;
+                  return `${enrolledCount}/${course?.maxCapacity || 0}`;
+                })() }}
+              </span>
+            </div>
+            <button class="course-distribution__modal-inline-form-close" @click="closePopoverForm">
+              <svg class="course-distribution__modal-inline-form-close-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Currently enrolled students in the target course -->
+          <div v-if="activePopoverForm.courseId !== 'go-home' && enrolledByCourseId[activePopoverForm.courseId]?.length > 0" class="course-distribution__modal-inline-form-enrolled">
+            <p class="course-distribution__modal-inline-form-enrolled-title">Currently enrolled:</p>
+            <div class="course-distribution__modal-inline-form-enrolled-list">
+              <div 
+                v-for="enrolledStudent in enrolledByCourseId[activePopoverForm.courseId]" 
+                :key="enrolledStudent.id"
+                class="course-distribution__modal-inline-form-enrolled-item"
+              >
+                <span class="course-distribution__modal-inline-form-enrolled-name">{{ enrolledStudent.class }} {{ enrolledStudent.name }}</span>
+                
+                <!-- Move dropdown for enrolled students -->
+                <select 
+                  v-if="getAvailableCoursesForMove(activePopoverForm.dayIndex, activePopoverForm.courseId).length > 0"
+                  class="course-distribution__modal-inline-form-move-select"
+                  @change="onStudentMove(enrolledStudent.id, $event.target.value, activePopoverForm.dayIndex)"
+                >
+                  <option value="">Move</option>
+                  <option 
+                    v-for="course in getAvailableCoursesForMove(activePopoverForm.dayIndex, activePopoverForm.courseId)"
+                    :key="course.id"
+                    :value="course.id"
+                  >
+                    {{ course.name }}
+                    <span v-if="course.spotsAvailable !== null">({{ course.spotsAvailable }})</span>
+                  </option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div v-else-if="activePopoverForm.courseId !== 'go-home'" class="course-distribution__modal-inline-form-no-students">
+            <p class="course-distribution__modal-inline-form-no-students-text">No children enrolled</p>
+          </div>
+
+          <!-- Action Button -->
+          <button 
+            class="course-distribution__modal-inline-form-action-btn"
+            :class="{ 
+              'course-distribution__modal-inline-form-action-btn--destructive': getMovementBlockingReason(activeScheduleModal.childId, activePopoverForm.courseId, activePopoverForm.dayIndex),
+              'course-distribution__modal-inline-form-action-btn--default': !getMovementBlockingReason(activeScheduleModal.childId, activePopoverForm.courseId, activePopoverForm.dayIndex)
+            }"
+            @click="(() => {
+              const blockingReason = getMovementBlockingReason(activeScheduleModal.childId, activePopoverForm.courseId, activePopoverForm.dayIndex);
+              if (blockingReason) {
+                alert(`Cannot move child: ${blockingReason}`);
+              } else {
+                onStudentMove(activeScheduleModal.childId, activePopoverForm.courseId, activePopoverForm.dayIndex);
+                closePopoverForm();
+              }
+            })()"
+            :title="getMovementBlockingReason(activeScheduleModal.childId, activePopoverForm.courseId, activePopoverForm.dayIndex) || ''"
+          >
+            <span v-if="getMovementBlockingReason(activeScheduleModal.childId, activePopoverForm.courseId, activePopoverForm.dayIndex)">
+              ⚠️ {{ getMovementBlockingReason(activeScheduleModal.childId, activePopoverForm.courseId, activePopoverForm.dayIndex) }}
+            </span>
+            <span v-else>
+              {{ activePopoverForm.courseId === 'go-home' ? 'Send Home' : `Move Here (${getCourseAvailableSpotsForDay(activePopoverForm.dayIndex, activePopoverForm.courseId)} free)` }}
+            </span>
+          </button>
+        </div>
+
+        <!-- Course Details (if not go-home) -->
+        <div v-if="activeScheduleModal.activity !== 'go-home'" class="course-distribution__modal-course-details">
+          <p class="course-distribution__modal-course-title">
+            Other students enrolled: {{ getCourseName(activeScheduleModal.activity, activeScheduleModal.dayIndex) }}
+            <span v-if="getCurrentChoice(activeScheduleModal.childId, activeScheduleModal.activity)">
+              ({{ getCurrentChoice(activeScheduleModal.childId, activeScheduleModal.activity).choice }} choice)
+            </span>
+          </p>
+          
+          <div v-if="enrolledByCourseId[activeScheduleModal.activity]?.length > 0" class="course-distribution__modal-enrolled-list">
+            <div 
+              v-for="enrolledStudent in enrolledByCourseId[activeScheduleModal.activity]" 
+              :key="enrolledStudent.id"
+              class="course-distribution__modal-enrolled-item"
+            >
+              <span class="course-distribution__modal-enrolled-name">{{ enrolledStudent.class }} {{ enrolledStudent.name }}</span>
+            </div>
+          </div>
+          <p v-else class="course-distribution__modal-no-students">No other students</p>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script>
-import { computed, ref, onMounted } from 'vue';
+import { computed, ref, onMounted, nextTick, triggerRef, reactive, toRefs } from 'vue';
 
 export default {
   props: {
@@ -670,27 +977,41 @@ export default {
   emits: ['trigger-event'],
   setup(props, { emit }) {
     const isEditing = computed(() => {
-      /* wwEditor:start */ return props.wwEditorState.isEditing; /* wwEditor:end */
+      /* wwEditor:start */ 
+      const editing = props.wwEditorState?.isEditing || false;
+      return editing; 
+      /* wwEditor:end */
       return false;
     });
 
     // State
     const loading = ref(true);
     const searchQuery = ref('');
-    const selectedDayNumber = ref(1);
+    const selectedDayIndex = ref(0);
     const selectedSemesterIndex = ref(0);
-    const allStudents = ref([]);
-    const allCourses = ref([]);
     const daysOfWeek = ref([]);
     const semesters = ref([]);
     const currentSemester = ref('');
-    const courseNotes = ref([]);
-    const visibleParticipants = ref(new Set());
-    const collapsedCourseDetails = ref(new Set());
-    const isGoingHomeExpanded = ref(true);
-    const isGoingHomeChildrenVisible = ref(true);
-    const notesVisible = ref(new Set());
-    const approvedCourses = ref(new Set());
+    
+    // Test counter for debugging
+
+          const visibleParticipants = ref({});
+      const collapsedCourseDetails = ref({});
+      const isGoingHomeExpanded = ref(true);
+      const isGoingHomeChildrenVisible = ref(true);
+            const notesVisible = ref({});
+      const approvedCourses = ref({});
+      
+      // Notes functionality state
+      const newNoteText = ref({});
+      const showAddNote = ref({});
+      const editingNote = ref(null); // { courseId, noteId }
+      const editNoteText = ref('');
+      
+      // Popover state for schedule popover
+      const activeScheduleModal = ref(null); // { childId, courseId, dayIndex, day, activity }
+      const activePopoverForm = ref(null); // { childId, courseId, dayIndex } - for nested form
+      const popoverPosition = ref({ x: 0, y: 0 }); // Position for the popover
 
 
     // Mock data for WeWeb compatibility
@@ -709,7 +1030,7 @@ export default {
           name: 'Fall 2024',
           schedule: [
             {
-              day: 'Monday',
+          day: 'Monday',
               courses: [
                 { id: 'course-1', name: 'Computer', maxCapacity: 12, enrolledChildren: ['student-2', 'student-3'], teacher: 'Steffi J', room: 'Computer', availableGrades: ['3', '4', '5'], notes: [], forcedFull: false },
                 { id: 'course-2', name: 'Lego-Bau', maxCapacity: 10, enrolledChildren: [], teacher: 'Anna K', room: 'Werkraum', availableGrades: ['3', '4', '5'], notes: [], forcedFull: false },
@@ -776,16 +1097,16 @@ export default {
             }
           ],
           children: [
-            { id: 'student-1', name: 'Anna Meier', class: '3A', first_choice: 'course-1', second_choice: 'course-2', third_choice: 'course-3', enrollments: {} },
-            { id: 'student-2', name: 'Max Schmidt', class: '4B', first_choice: 'course-2', second_choice: 'course-1', third_choice: 'course-3', enrollments: {} },
-            { id: 'student-3', name: 'Lea Müller', class: '5A', first_choice: 'course-3', second_choice: 'course-1', third_choice: 'course-2', enrollments: {} },
-            { id: 'student-4', name: 'Tom Weber', class: '3B', first_choice: 'course-1', second_choice: 'course-3', third_choice: 'course-2', enrollments: {} },
-            { id: 'student-5', name: 'Lisa Fischer', class: '4A', first_choice: 'course-2', second_choice: 'course-1', third_choice: 'course-3', enrollments: {} },
-            { id: 'student-6', name: 'Paul Wagner', class: '5B', first_choice: 'course-1', second_choice: 'course-2', third_choice: 'course-3', enrollments: {} },
-            { id: 'student-7', name: 'Emma Schulz', class: '3A', first_choice: 'course-3', second_choice: 'course-1', third_choice: 'go-home', enrollments: {} },
-            { id: 'student-8', name: 'Felix Klein', class: '4B', first_choice: 'course-1', second_choice: 'course-2', third_choice: 'go-home', enrollments: {} },
-            { id: 'student-9', name: 'Nina Hoffmann', class: '5A', first_choice: 'course-2', second_choice: 'course-3', third_choice: 'course-1', enrollments: {} },
-            { id: 'student-10', name: 'Lukas Meyer', class: '3B', first_choice: 'course-3', second_choice: 'course-1', third_choice: 'course-2', enrollments: {} }
+            { id: 'student-1', name: 'Anna Meier', class: '3A', first_choice: 'course-1', second_choice: 'course-2', third_choice: 'course-3', enrollments: { 0: undefined, 1: undefined, 2: undefined } },
+            { id: 'student-2', name: 'Max Schmidt', class: '4B', first_choice: 'course-2', second_choice: 'course-1', third_choice: 'course-3', enrollments: { 0: undefined, 1: undefined, 2: undefined } },
+            { id: 'student-3', name: 'Lea Müller', class: '5A', first_choice: 'course-3', second_choice: 'course-1', third_choice: 'course-2', enrollments: { 0: undefined, 1: undefined, 2: undefined } },
+            { id: 'student-4', name: 'Tom Weber', class: '3B', first_choice: 'course-1', second_choice: 'course-3', third_choice: 'course-2', enrollments: { 0: undefined, 1: undefined, 2: undefined } },
+            { id: 'student-5', name: 'Lisa Fischer', class: '4A', first_choice: 'course-2', second_choice: 'course-1', third_choice: 'course-3', enrollments: { 0: undefined, 1: undefined, 2: undefined } },
+            { id: 'student-6', name: 'Paul Wagner', class: '5B', first_choice: 'course-1', second_choice: 'course-2', third_choice: 'course-3', enrollments: { 0: undefined, 1: undefined, 2: undefined } },
+            { id: 'student-7', name: 'Emma Schulz', class: '3A', first_choice: 'course-3', second_choice: 'course-1', third_choice: 'go-home', enrollments: { 0: undefined, 1: undefined, 2: undefined } },
+            { id: 'student-8', name: 'Felix Klein', class: '4B', first_choice: 'course-1', second_choice: 'course-2', third_choice: 'go-home', enrollments: { 0: undefined, 1: undefined, 2: undefined } },
+            { id: 'student-9', name: 'Nina Hoffmann', class: '5A', first_choice: 'course-2', second_choice: 'course-3', third_choice: 'course-1', enrollments: { 0: undefined, 1: undefined, 2: undefined } },
+            { id: 'student-10', name: 'Lukas Meyer', class: '3B', first_choice: 'course-3', second_choice: 'course-1', third_choice: 'course-2', enrollments: { 0: undefined, 1: undefined, 2: undefined } }
           ]
         }
       ];
@@ -808,78 +1129,9 @@ export default {
         });
       });
 
-      allCourses.value = [
-        {
-          id: 'course-1',
-          name: 'Computer',
-          teacher: 'Steffi J',
-          room: 'Computer',
-          day: 'Monday',
-          maxCapacity: 12,
-          is_locked: false,
-          notes_count: 0,
-          forcedFull: false
-        },
-        {
-          id: 'course-2', 
-          name: 'Lego-Bau',
-          teacher: 'Anna K',
-          room: 'Werkraum',
-          day: 'Monday',
-          max_capacity: 10,
-          is_locked: false,
-          notes_count: 0
-        },
-        {
-          id: 'course-3',
-          name: 'Lese-Club',
-          teacher: 'Maria L',
-          room: 'Bibliothek',
-          day: 'Monday', 
-          max_capacity: 8,
-          is_locked: false,
-          notes_count: 0
-        }
-      ];
 
-      allStudents.value = [
-        {
-          id: 'student-1',
-          name: 'Anna Meier',
-          current_enrollment: null,
-          first_choice: 'course-1',
-          second_choice: 'course-2',
-          third_choice: 'course-3'
-        },
-        {
-          id: 'student-2',
-          name: 'Max Schmidt', 
-          current_enrollment: 'course-1',
-          first_choice: 'course-1',
-          second_choice: 'course-2',
-          third_choice: 'course-3'
-        },
-        {
-          id: 'student-3',
-          name: 'Lea Müller',
-          current_enrollment: 'course-1',
-          first_choice: 'course-1',
-          second_choice: 'course-3',
-          third_choice: 'course-2'
-        }
-      ];
 
-      courseNotes.value = [
-        {
-          id: 'note-1',
-          course_id: 'course-1',
-          text: 'Need to check equipment before class starts',
-          author: 'Test Admin',
-          is_problem: true,
-          is_resolved: false,
-          created_at: new Date().toISOString()
-        }
-      ];
+
 
       currentSemester.value = semesters.value[0].name;
       loading.value = false;
@@ -887,12 +1139,16 @@ export default {
 
     // Computed properties
     const currentSemesterData = computed(() => {
-      return semesters.value[selectedSemesterIndex.value] || semesters.value[0];
+      // Force reactivity by explicitly accessing the index
+      const index = selectedSemesterIndex.value;
+      const result = semesters.value[index] || semesters.value[0];
+      console.log('currentSemesterData computed:', result?.name, 'index:', index, 'total semesters:', semesters.value.length);
+      return result;
     });
 
     const currentDayData = computed(() => {
       const semester = currentSemesterData.value;
-      return semester?.schedule[selectedDayNumber.value - 1] || semester?.schedule[0];
+      return semester?.schedule[selectedDayIndex.value] || semester?.schedule[0];
     });
 
     const selectedDayName = computed(() => {
@@ -902,6 +1158,7 @@ export default {
 
     const filteredStudents = computed(() => {
       const students = currentSemesterData.value?.children || [];
+      console.log('filteredStudents computed:', students.length, 'students for semester:', currentSemesterData.value?.name);
       if (!searchQuery.value.trim()) return students;
       const query = searchQuery.value.toLowerCase();
       return students.filter(student => 
@@ -910,32 +1167,59 @@ export default {
     });
 
     const filteredCourses = computed(() => {
-      return currentDayData.value?.courses || [];
+      const result = currentDayData.value?.courses || [];
+      console.log('filteredCourses computed:', result.length, 'courses');
+      return result;
     });
 
     const waitingListStudents = computed(() => {
-      return filteredStudents.value.filter(student => 
-        !student.enrollments || student.enrollments[selectedDayNumber.value - 1] === undefined
+      // Explicitly depend on selectedSemesterIndex to ensure reactivity
+      const semesterIndex = selectedSemesterIndex.value;
+      const dayIndex = selectedDayIndex.value;
+      
+      const enrolledIds = currentDayData.value?.courses.flatMap(course => course.enrolledChildren) || [];
+      const result = filteredStudents.value.filter(student => 
+        !enrolledIds.includes(student.id) && 
+        student.name.toLowerCase().includes(searchQuery.value.toLowerCase()) &&
+        // Exclude children who are intentionally going home (have go-home preferences or explicitly set to go home)
+        !(student.enrollments[dayIndex] === undefined && hasGoHomePreference(student))
       );
+      console.log('waitingListStudents computed:', result.length, 'students for semester:', semesterIndex, 'day:', dayIndex);
+      return result;
     });
 
     const goingHomeStudents = computed(() => {
+      // Explicitly depend on selectedSemesterIndex to ensure reactivity
+      const semesterIndex = selectedSemesterIndex.value;
+      const dayIndex = selectedDayIndex.value;
+      
+      const enrolledIds = currentDayData.value?.courses.flatMap(course => course.enrolledChildren) || [];
       return filteredStudents.value.filter(student => 
-        student.enrollments && student.enrollments[selectedDayNumber.value - 1] === undefined &&
-        (student.first_choice === 'go-home' || student.second_choice === 'go-home' || student.third_choice === 'go-home')
+        !enrolledIds.includes(student.id) && 
+        student.name.toLowerCase().includes(searchQuery.value.toLowerCase()) &&
+        // Include children who are intentionally going home (have go-home preferences or explicitly set to go home)
+        (student.enrollments[dayIndex] === undefined && hasGoHomePreference(student))
       );
     });
 
     const firstChoiceGoHomeStudents = computed(() => {
+      // Explicitly depend on selectedSemesterIndex to ensure reactivity
+      const semesterIndex = selectedSemesterIndex.value;
+      const dayIndex = selectedDayIndex.value;
+      
       return filteredStudents.value.filter(student => 
-        student.enrollments && student.enrollments[selectedDayNumber.value - 1] === undefined &&
+        student.enrollments && student.enrollments[dayIndex] === undefined &&
         student.first_choice === 'go-home'
       );
     });
 
     const secondOrThirdChoiceGoHomeStudents = computed(() => {
+      // Explicitly depend on selectedSemesterIndex to ensure reactivity
+      const semesterIndex = selectedSemesterIndex.value;
+      const dayIndex = selectedDayIndex.value;
+      
       return filteredStudents.value.filter(student => 
-        student.enrollments && student.enrollments[selectedDayNumber.value - 1] === undefined &&
+        student.enrollments && student.enrollments[dayIndex] === undefined &&
         student.first_choice !== 'go-home' && (student.second_choice === 'go-home' || student.third_choice === 'go-home')
       );
     });
@@ -986,26 +1270,66 @@ export default {
       const courses = filteredCourses.value;
       const students = filteredStudents.value;
       
+      // Explicitly depend on selectedSemesterIndex to ensure reactivity
+      const semesterIndex = selectedSemesterIndex.value;
+      const dayIndex = selectedDayIndex.value;
+      
       courses.forEach(course => {
-        enrolled[course.id] = students.filter(student => 
-          student.enrollments && student.enrollments[selectedDayNumber.value - 1] === course.id
-        );
+        enrolled[course.id] = course.enrolledChildren.map(childId => 
+          students.find(student => student.id === childId)
+        ).filter(Boolean);
       });
       return enrolled;
     });
 
     const totalEnrolledForDay = computed(() => {
-      return filteredStudents.value.filter(student => student.current_enrollment).length;
+      // Explicitly depend on selectedSemesterIndex to ensure reactivity
+      const semesterIndex = selectedSemesterIndex.value;
+      const dayIndex = selectedDayIndex.value;
+      
+      const enrolledIds = currentDayData.value?.courses.flatMap(course => course.enrolledChildren) || [];
+      const result = enrolledIds.length;
+      console.log('totalEnrolledForDay computed:', result, 'for semester:', semesterIndex, 'day:', dayIndex);
+      return result;
     });
 
     const unresolvedProblems = computed(() => {
-      return courseNotes.value.filter(note => note.is_problem && !note.is_resolved);
+      const allNotes = [];
+      const semester = currentSemesterData.value;
+      if (semester?.schedule) {
+        semester.schedule.forEach(day => {
+          day.courses.forEach(course => {
+            if (course.notes) {
+              course.notes.forEach(note => {
+                if (note.isProblem && !note.isResolved) {
+                  allNotes.push({
+                    ...note,
+                    course_id: course.id,
+                    created_at: note.timestamp
+                  });
+                }
+              });
+            }
+          });
+        });
+      }
+      return allNotes;
     });
 
     // Helper functions
-    const getCourseName = (courseId) => {
-      const course = allCourses.value.find(c => c.id === courseId);
-      return course?.name || 'Unknown Course';
+    const getCourseName = (courseId, dayIndex = null) => {
+      if (courseId === 'go-home') return 'Go Home';
+      
+      // If dayIndex is provided, get course from that specific day
+      if (dayIndex !== null) {
+        const day = currentSemesterData.value?.schedule[dayIndex];
+        const course = day?.courses.find(c => c.id === courseId);
+        return course?.name || courseId;
+      }
+      
+      // Otherwise, get from current day
+      const course = currentDayData.value?.courses.find(c => c.id === courseId);
+      return course?.name || courseId;
     };
 
     const formatDate = (dateString) => {
@@ -1019,23 +1343,46 @@ export default {
       }).format(date);
     };
 
-    const formatPreferenceDisplay = (courseId) => {
+    const formatTimestamp = (timestamp) => {
+      if (!timestamp) return '';
+      const date = new Date(timestamp);
+      return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    };
+
+
+
+
+
+    const formatPreferenceDisplay = (courseId, dayIndex = null) => {
       if (courseId === 'go-home') return 'Home';
+      
+      // If dayIndex is provided, get course from that specific day
+      if (dayIndex !== null) {
+        const day = currentSemesterData.value?.schedule[dayIndex];
+        const course = day?.courses.find(c => c.id === courseId);
+        return course?.name || courseId;
+      }
+      
+      // Otherwise, get from current day
       const course = filteredCourses.value.find(c => c.id === courseId);
-      return course?.name || 'Unknown';
+      return course?.name || courseId;
     };
 
     const isCurrentChoice = (student, choiceNumber) => {
+      // Explicitly depend on selectedSemesterIndex to ensure reactivity
+      const semesterIndex = selectedSemesterIndex.value;
+      const dayIndex = selectedDayIndex.value;
+      
       const choice = choiceNumber === 1 ? student.first_choice :
                    choiceNumber === 2 ? student.second_choice : 
                    student.third_choice;
-      return student.enrollments && student.enrollments[selectedDayNumber.value - 1] === choice;
+      return student.enrollments && student.enrollments[dayIndex] === choice;
     };
 
     const isLockedTarget = (courseId) => {
       if (!courseId || courseId === 'go-home') return false;
-      const course = allCourses.value.find(c => c.id === courseId);
-      return !!course?.is_locked;
+      const course = currentDayData.value?.courses.find(c => c.id === courseId);
+      return !!course?.forcedFull;
     };
 
     const displayRosterCount = (course) => {
@@ -1046,7 +1393,7 @@ export default {
       const enrolled = displayRosterCount(course);
       const capacity = course.maxCapacity || course.max_capacity;
       
-      if (course.is_locked || course.forcedFull) return 'locked';
+      if (course.forcedFull) return 'locked';
       if (enrolled > capacity) return 'overfilled';
       if (enrolled >= capacity * 0.8) return 'near_full';
       return 'normal';
@@ -1077,44 +1424,67 @@ export default {
     };
 
     const isParticipantsVisible = (courseId) => {
-      // Default to visible when not explicitly toggled
-      return !visibleParticipants.value.has(courseId);
+      const courseKey = `${selectedSemesterIndex.value}-${selectedDayIndex.value}-${courseId}`;
+      return visibleParticipants.value[courseKey] !== false; // Default to true if not set
     };
 
     const toggleParticipants = (courseId) => {
-      if (visibleParticipants.value.has(courseId)) {
-        visibleParticipants.value.delete(courseId);
+      const courseKey = `${selectedSemesterIndex.value}-${selectedDayIndex.value}-${courseId}`;
+      if (visibleParticipants.value[courseKey] === false) {
+        visibleParticipants.value[courseKey] = true;
       } else {
-        visibleParticipants.value.add(courseId);
+        visibleParticipants.value[courseKey] = false;
       }
+      // Force reactivity by reassigning the entire object
+      visibleParticipants.value = { ...visibleParticipants.value };
     };
 
     const toggleCourseDetails = (courseId) => {
-      if (collapsedCourseDetails.value.has(courseId)) {
-        collapsedCourseDetails.value.delete(courseId);
+      const courseKey = `${selectedSemesterIndex.value}-${selectedDayIndex.value}-${courseId}`;
+      if (collapsedCourseDetails.value[courseKey] === false) {
+        collapsedCourseDetails.value[courseKey] = true;
       } else {
-        collapsedCourseDetails.value.add(courseId);
+        collapsedCourseDetails.value[courseKey] = false;
       }
+      // Force reactivity by reassigning the entire object
+      collapsedCourseDetails.value = { ...collapsedCourseDetails.value };
     };
 
     const isCourseDetailsVisible = (courseId) => {
-      return !collapsedCourseDetails.value.has(courseId);
+      const courseKey = `${selectedSemesterIndex.value}-${selectedDayIndex.value}-${courseId}`;
+      return collapsedCourseDetails.value[courseKey] !== false; // Default to true (visible)
+    };
+
+    const toggleCourseDetailsVisibility = (courseId) => {
+      const courseKey = `${selectedSemesterIndex.value}-${selectedDayIndex.value}-${courseId}`;
+      if (collapsedCourseDetails.value[courseKey] === false) {
+        collapsedCourseDetails.value[courseKey] = true;
+      } else {
+        collapsedCourseDetails.value[courseKey] = false;
+      }
+      // Force reactivity by reassigning the entire object
+      collapsedCourseDetails.value = { ...collapsedCourseDetails.value };
     };
 
     const isNotesVisible = (courseId) => {
-      return notesVisible.value.has(courseId);
+      const courseKey = `${selectedSemesterIndex.value}-${selectedDayIndex.value}-${courseId}`;
+      return notesVisible.value[courseKey] !== false; // Default to true if not set
     };
 
     const toggleNotesVisibility = (courseId) => {
-      if (notesVisible.value.has(courseId)) {
-        notesVisible.value.delete(courseId);
+      const courseKey = `${selectedSemesterIndex.value}-${selectedDayIndex.value}-${courseId}`;
+      if (notesVisible.value[courseKey] === false) {
+        notesVisible.value[courseKey] = true;
       } else {
-        notesVisible.value.add(courseId);
+        notesVisible.value[courseKey] = false;
       }
+      // Force reactivity by reassigning the entire object
+      notesVisible.value = { ...notesVisible.value };
     };
 
     const isCourseApproved = (courseId) => {
-      return approvedCourses.value.has(courseId);
+      const approvalKey = `${selectedSemesterIndex.value}-${selectedDayIndex.value}-${courseId}`;
+      return approvedCourses.value[approvalKey] || false;
     };
 
     const hasGoHomePreference = (student) => {
@@ -1133,8 +1503,8 @@ export default {
     // Event handlers
     const onDayChange = async (day) => {
       if (isEditing.value) return;
-      selectedDayNumber.value = parseInt(day, 10);
-      emit('trigger-event', { name: 'dayChange', event: { value: selectedDayNumber.value } });
+      selectedDayIndex.value = parseInt(day, 10);
+      emit('trigger-event', { name: 'dayChange', event: { value: selectedDayIndex.value } });
     };
 
     const onSearchChange = (query) => {
@@ -1143,40 +1513,56 @@ export default {
       emit('trigger-event', { name: 'searchChange', event: { value: query } });
     };
 
-    const onStudentMove = async (studentId, targetId) => {
+    const onStudentMove = async (studentId, targetId, targetDayIndex = null) => {
       if (isEditing.value) return;
-      console.log('Moving student', studentId, 'to', targetId);
+      console.log('Moving student', studentId, 'to', targetId, 'on day', targetDayIndex);
       
-      // Update student enrollment in current semester data
+      // Use targetDayIndex if provided, otherwise use current day
+      const dayIndex = targetDayIndex !== null ? targetDayIndex : selectedDayIndex.value;
+      
+      // Explicitly depend on selectedSemesterIndex to ensure reactivity
+      const semesterIndex = selectedSemesterIndex.value;
+      
       const semester = currentSemesterData.value;
+      const day = currentDayData.value;
       const student = semester.children.find(s => s.id === studentId);
+      
       if (student) {
+        // Remove student from current course
+        day.courses.forEach(course => {
+          course.enrolledChildren = course.enrolledChildren.filter(id => id !== studentId);
+        });
+        
+        // Add student to new course or set to undefined
         if (targetId === 'waiting') {
-          student.enrollments[selectedDayNumber.value - 1] = undefined;
+          student.enrollments[dayIndex] = undefined;
+        } else if (targetId === 'go-home') {
+          student.enrollments[dayIndex] = undefined;
         } else {
-          student.enrollments[selectedDayNumber.value - 1] = targetId;
+          const targetCourse = day.courses.find(c => c.id === targetId);
+          if (targetCourse) {
+            targetCourse.enrolledChildren.push(studentId);
+            student.enrollments[dayIndex] = targetId;
+          }
         }
       }
       
-      emit('trigger-event', { name: 'studentMove', event: { studentId, courseId: targetId } });
+      emit('trigger-event', { name: 'studentMove', event: { studentId, courseId: targetId, dayIndex } });
     };
 
-    const onLockToggle = async (courseId, lockState) => {
+    const onLockToggle = (courseId, lockState) => {
       if (isEditing.value) return;
-      console.log('Toggling lock for course', courseId, 'to', lockState);
+      console.log('Toggling forcedFull for course', courseId, 'to', lockState);
       
-      // Update course lock state in mock data
-      const course = allCourses.value.find(c => c.id === courseId);
-      if (course) {
-        course.is_locked = lockState;
-      }
-      // Also reflect lock state on the course objects used in the current view
+      // Explicitly depend on selectedSemesterIndex to ensure reactivity
+      const semesterIndex = selectedSemesterIndex.value;
+      const dayIndex = selectedDayIndex.value;
+      
+      // Update course forcedFull state in current day data
       const day = currentDayData.value;
-      if (day && Array.isArray(day.courses)) {
-        const target = day.courses.find(c => c.id === courseId);
-        if (target) {
-          target.is_locked = lockState;
-        }
+      const course = day?.courses.find(c => c.id === courseId);
+      if (course) {
+        course.forcedFull = lockState;
       }
       
       emit('trigger-event', { name: 'courseLockToggle', event: { courseId, lockState } });
@@ -1185,17 +1571,188 @@ export default {
     const onApproveClick = (courseId) => {
       if (isEditing.value) return;
       console.log('Approving course', courseId);
-      if (approvedCourses.value.has(courseId)) {
-        approvedCourses.value.delete(courseId);
+      const approvalKey = `${selectedSemesterIndex.value}-${selectedDayIndex.value}-${courseId}`;
+      if (approvedCourses.value[approvalKey]) {
+        delete approvedCourses.value[approvalKey];
       } else {
-        approvedCourses.value.add(courseId);
+        approvedCourses.value[approvalKey] = true;
       }
+      // Force reactivity by reassigning the entire object
+      approvedCourses.value = { ...approvedCourses.value };
+      
       emit('trigger-event', { name: 'courseApprove', event: { courseId } });
+    };
+
+    // Notes functionality
+    const addNote = (courseId, text) => {
+      if (!text.trim()) return;
+      
+      const newNote = {
+        id: `note-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        text: text.trim(),
+        author: 'Admin', // In a real app, this would come from user authentication
+        timestamp: new Date(),
+        isProblem: false,
+        isResolved: false
+      };
+
+      // Update course notes in current semester data
+      const semester = currentSemesterData.value;
+      if (semester?.schedule) {
+        semester.schedule.forEach(day => {
+          const course = day.courses.find(c => c.id === courseId);
+          if (course) {
+            if (!course.notes) course.notes = [];
+            course.notes.push(newNote);
+          }
+        });
+      }
+
+      // Clear the input
+      const courseKey = `${selectedSemesterIndex.value}-${selectedDayIndex.value}-${courseId}`;
+      newNoteText.value[courseKey] = '';
+      showAddNote.value[courseKey] = false;
+      // Force reactivity by reassigning the entire objects
+      newNoteText.value = { ...newNoteText.value };
+      showAddNote.value = { ...showAddNote.value };
+      
+      // Force reactivity by reassigning the entire semesters object
+      semesters.value = [...semesters.value];
+      
+      emit('trigger-event', { name: 'noteAdded', event: { courseId, note: newNote } });
+    };
+
+    const toggleNoteProblem = (courseId, noteId) => {
+      const semester = currentSemesterData.value;
+      if (semester?.schedule) {
+        semester.schedule.forEach(day => {
+          const course = day.courses.find(c => c.id === courseId);
+          if (course && course.notes) {
+            const note = course.notes.find(n => n.id === noteId);
+            if (note) {
+              note.isProblem = !note.isProblem;
+              note.isResolved = note.isProblem ? false : note.isResolved;
+            }
+          }
+        });
+      }
+      
+      // Force reactivity by reassigning the entire semesters object
+      semesters.value = [...semesters.value];
+      
+      emit('trigger-event', { name: 'noteProblemToggled', event: { courseId, noteId } });
+    };
+
+    const toggleProblemResolved = (courseId, noteId) => {
+      const semester = currentSemesterData.value;
+      if (semester?.schedule) {
+        semester.schedule.forEach(day => {
+          const course = day.courses.find(c => c.id === courseId);
+          if (course && course.notes) {
+            const note = course.notes.find(n => n.id === noteId);
+            if (note) {
+              note.isResolved = !note.isResolved;
+            }
+          }
+        });
+      }
+      
+      // Force reactivity by reassigning the entire semesters object
+      semesters.value = [...semesters.value];
+      
+      emit('trigger-event', { name: 'problemResolved', event: { courseId, noteId } });
+    };
+
+    const confirmDelete = (courseId, noteId) => {
+      // Safe confirmation that works in all environments
+      try {
+        if (typeof window !== 'undefined' && window.confirm) {
+          if (window.confirm('Are you sure you want to delete this note?')) {
+            deleteNote(courseId, noteId);
+          }
+        } else {
+          // Fallback: just delete without confirmation
+          deleteNote(courseId, noteId);
+        }
+      } catch (error) {
+        // If confirmation fails, just delete
+        deleteNote(courseId, noteId);
+      }
+    };
+
+    const deleteNote = (courseId, noteId) => {
+      const semester = currentSemesterData.value;
+      if (semester?.schedule) {
+        semester.schedule.forEach(day => {
+          const course = day.courses.find(c => c.id === courseId);
+          if (course && course.notes) {
+            course.notes = course.notes.filter(note => note.id !== noteId);
+          }
+        });
+      }
+      
+      // Force reactivity by reassigning the entire semesters object
+      semesters.value = [...semesters.value];
+      
+      emit('trigger-event', { name: 'noteDeleted', event: { courseId, noteId } });
+    };
+
+    const startEditNote = (courseId, noteId, currentText) => {
+      editingNote.value = { courseId, noteId };
+      editNoteText.value = currentText;
+    };
+
+    const cancelEditNote = () => {
+      editingNote.value = null;
+      editNoteText.value = '';
+    };
+
+    const saveEditNote = (courseId, noteId) => {
+      if (!editNoteText.value.trim()) return;
+
+      const semester = currentSemesterData.value;
+      if (semester?.schedule) {
+        semester.schedule.forEach(day => {
+          const course = day.courses.find(c => c.id === courseId);
+          if (course && course.notes) {
+            const note = course.notes.find(n => n.id === noteId);
+            if (note) {
+              note.text = editNoteText.value.trim();
+            }
+          }
+        });
+      }
+
+      editingNote.value = null;
+      editNoteText.value = '';
+      
+      // Force reactivity by reassigning the entire semesters object
+      semesters.value = [...semesters.value];
+      
+      emit('trigger-event', { name: 'noteEdited', event: { courseId, noteId } });
     };
 
     const onNotesClick = (courseId) => {
       if (isEditing.value) return;
-      console.log('Opening notes for course', courseId);
+      
+      // First, ensure course details are visible
+      const courseKey = `${selectedSemesterIndex.value}-${selectedDayIndex.value}-${courseId}`;
+      
+      if (!isCourseDetailsVisible(courseId)) {
+        toggleCourseDetailsVisibility(courseId);
+      }
+      
+      // Then ensure notes are visible
+      if (!isNotesVisible(courseId)) {
+        toggleNotesVisibility(courseId);
+      }
+      
+      // Show add note form
+      showAddNote.value[courseKey] = true;
+      
+      // Force reactivity by reassigning the entire object
+      showAddNote.value = { ...showAddNote.value };
+      
       emit('trigger-event', { name: 'courseNotesOpen', event: { courseId } });
     };
 
@@ -1203,58 +1760,281 @@ export default {
       if (isEditing.value) return;
       console.log('Resolving note', noteId);
       
-      // Update note in mock data
-      const note = courseNotes.value.find(n => n.id === noteId);
+      // Update note in current semester data
+      const semester = currentSemesterData.value;
+      if (semester?.schedule) {
+        semester.schedule.forEach(day => {
+          day.courses.forEach(course => {
+            if (course.notes) {
+              const note = course.notes.find(n => n.id === noteId);
       if (note) {
-        note.is_resolved = true;
-        note.resolved_at = new Date().toISOString();
+                note.isResolved = true;
+                note.resolvedAt = new Date().toISOString();
+              }
+            }
+          });
+        });
       }
       
       emit('trigger-event', { name: 'problemResolved', event: { noteId } });
+    };
+
+    const autoEnrollStudents = () => {
+      console.log('Auto-enrolling students to FIRST CHOICES only');
+      
+      // Explicitly depend on selectedSemesterIndex to ensure reactivity
+      const semesterIndex = selectedSemesterIndex.value;
+      const dayIndex = selectedDayIndex.value;
+      
+      const semester = currentSemesterData.value;
+      const day = currentDayData.value;
+      
+      // Clear all enrollments for current day
+      semester.children.forEach(student => {
+        if (!student.enrollments) student.enrollments = {};
+        student.enrollments[dayIndex] = undefined;
+      });
+      
+      // Clear all course enrollments for current day
+      day.courses.forEach(course => {
+        course.enrolledChildren = [];
+      });
+      
+      // Auto-enroll students based on their FIRST CHOICE only (like React)
+      semester.children.forEach(student => {
+        const firstChoice = student.first_choice;
+        
+        if (firstChoice === 'go-home') {
+          student.enrollments[dayIndex] = undefined;
+          return;
+        }
+        
+        // Check if child is eligible for their first choice
+        const course = day.courses.find(c => c.id === firstChoice);
+        if (course && !course.forcedFull) {
+          // Always enroll in first choice, even if it goes over capacity (like React)
+          course.enrolledChildren.push(student.id);
+          student.enrollments[dayIndex] = firstChoice;
+        } else {
+          // Course is forced full or not found, send home
+          student.enrollments[dayIndex] = undefined;
+        }
+      });
+      
+      emit('trigger-event', { name: 'autoEnrollStudents' });
+    };
+
+    // Simplified click handlers for better reactivity
+    const handleFirstChoiceClick = (student) => {
+      if (!isCurrentChoice(student, 1) && !isLockedTarget(student.first_choice)) {
+        onStudentMove(student.id, student.first_choice);
+      }
+    };
+
+    const handleSecondChoiceClick = (student) => {
+      if (!isCurrentChoice(student, 2) && !isLockedTarget(student.second_choice)) {
+        onStudentMove(student.id, student.second_choice);
+      }
+    };
+
+    const handleThirdChoiceClick = (student) => {
+      if (!isCurrentChoice(student, 3) && !isLockedTarget(student.third_choice)) {
+        onStudentMove(student.id, student.third_choice);
+      }
+    };
+
+    // Schedule modal functions
+    const openScheduleModal = (childId, courseId, dayIndex, day, activity, event) => {
+      activeScheduleModal.value = { childId, courseId, dayIndex, day, activity };
+      
+      // Calculate popover position
+      const rect = event.target.getBoundingClientRect();
+      popoverPosition.value = {
+        x: rect.left + rect.width / 2,
+        y: rect.top - 10 // Position above the element
+      };
+    };
+
+    const closeScheduleModal = () => {
+      activeScheduleModal.value = null;
+      activePopoverForm.value = null;
+    };
+
+    const openPopoverForm = (childId, courseId, dayIndex) => {
+      activePopoverForm.value = { childId, courseId, dayIndex };
+    };
+
+    const closePopoverForm = () => {
+      activePopoverForm.value = null;
+    };
+
+    const getChildPreferences = (childId, dayIndex = null) => {
+      const student = currentSemesterData.value?.children.find(s => s.id === childId);
+      if (!student) return [];
+      
+      const currentDay = dayIndex !== null ? currentSemesterData.value?.schedule[dayIndex] : currentDayData.value;
+      
+      return [
+        { choice: '1st', courseId: student.first_choice, name: getCourseName(student.first_choice, dayIndex) },
+        { choice: '2nd', courseId: student.second_choice, name: getCourseName(student.second_choice, dayIndex) },
+        { choice: '3rd', courseId: student.third_choice, name: getCourseName(student.third_choice, dayIndex) },
+      ];
+    };
+
+    const getCurrentChoice = (childId, activity) => {
+      const preferences = getChildPreferences(childId, activeScheduleModal.value?.dayIndex);
+      return preferences.find(p => p.courseId === activity);
+    };
+
+    const getAvailableCoursesForMove = (dayIndex, excludeCourseId) => {
+      const day = currentSemesterData.value?.schedule[dayIndex];
+      if (!day) return [];
+      
+      const availableCourses = day.courses.filter(course => 
+        course.id !== excludeCourseId && 
+        getCourseAvailableSpotsForDay(dayIndex, course.id) > 0
+      );
+      
+      // Add go-home option
+      return [
+        ...availableCourses.map(course => ({
+          id: course.id,
+          name: course.name,
+          spotsAvailable: getCourseAvailableSpotsForDay(dayIndex, course.id)
+        })),
+        { id: 'go-home', name: 'Go Home', spotsAvailable: null }
+      ];
+    };
+
+    const getMovementBlockingReason = (childId, targetCourseId, dayIndex) => {
+      const child = currentSemesterData.value?.children.find(c => c.id === childId);
+      if (!child) return 'Child not found';
+
+      // Check if already in this course
+      const currentEnrollment = child.enrollments[dayIndex];
+      if (currentEnrollment === targetCourseId || (currentEnrollment === undefined && targetCourseId === 'go-home')) {
+        return 'Already in this course/status';
+      }
+
+      if (targetCourseId === 'go-home') {
+        return null; // Going home is always allowed
+      }
+
+      const day = currentSemesterData.value?.schedule[dayIndex];
+      const course = day?.courses.find(c => c.id === targetCourseId);
+      if (!course) return 'Course not found';
+
+      // Check if course is forced full
+      if (course.forcedFull) {
+        return 'Course is marked as closed';
+      }
+
+      // Check grade eligibility
+      const childGrade = child.class.charAt(0);
+      if (!course.availableGrades.includes(childGrade)) {
+        return `Not eligible (Grade ${childGrade} not allowed, only grades ${course.availableGrades.join(', ')})`;
+      }
+
+      // Check available spots
+      const availableSpots = course.maxCapacity - course.enrolledChildren.length;
+      if (availableSpots <= 0) {
+        return `Course is full (${course.enrolledChildren.length}/${course.maxCapacity})`;
+      }
+
+      return null; // No blocking reason
+    };
+
+    const getCourseAvailableSpotsForDay = (dayIndex, courseId) => {
+      if (courseId === 'go-home') return null;
+      const day = currentSemesterData.value?.schedule[dayIndex];
+      const course = day?.courses.find(c => c.id === courseId);
+      if (!course) return 0;
+      if (course.forcedFull) return 0;
+      return course.maxCapacity - course.enrolledChildren.length;
     };
 
     const onResetToFirstChoices = () => {
       if (isEditing.value) return;
       console.log('Resetting all students to first choices');
       
+      // Explicitly depend on selectedSemesterIndex to ensure reactivity
+      const semesterIndex = selectedSemesterIndex.value;
+      const dayIndex = selectedDayIndex.value;
+      
       // Reset all students to their first choice for current day
       const semester = currentSemesterData.value;
       semester.children.forEach(student => {
         if (student.first_choice && student.first_choice !== 'go-home') {
-          student.enrollments[selectedDayNumber.value - 1] = student.first_choice;
+          student.enrollments[dayIndex] = student.first_choice;
         } else {
-          student.enrollments[selectedDayNumber.value - 1] = undefined;
+          student.enrollments[dayIndex] = undefined;
         }
       });
       
       emit('trigger-event', { name: 'resetToFirstChoices' });
     };
 
-    const onSemesterChange = (index) => {
+    const onSemesterChange = async () => {
       if (isEditing.value) return;
-      selectedSemesterIndex.value = parseInt(index);
+      console.log('Semester changed to:', selectedSemesterIndex.value);
+      
+      // Set loading state during transition
+      loading.value = true;
+      
+      selectedDayIndex.value = 0; // Reset to first day when semester changes
       currentSemester.value = semesters.value[selectedSemesterIndex.value].name;
+      
+      console.log('Semester changed to:', currentSemester.value, 'students:', currentSemesterData.value?.children?.length);
+      
+      // Force reactivity update
+      await nextTick();
+      
+      // Force trigger reactivity on semesters ref
+      triggerRef(semesters);
+      
+      // Clear loading state
+      loading.value = false;
+      
       emit('trigger-event', { name: 'semesterChange', event: { value: selectedSemesterIndex.value } });
     };
 
-    // Initialize data when component mounts
-    onMounted(() => {
+          // Initialize data when component mounts
+    onMounted(async () => {
+      console.log('Component mounted, initializing data...');
       initializeMockData();
+      
+      // Force reactivity update after initialization
+      await nextTick();
+      triggerRef(semesters);
+      // Note: reactive objects don't need triggerRef
+      
+      // Set default visibility states (reactive objects are already initialized)
+      console.log('Reactive objects initialized');
+      
+      console.log('Data initialized:', {
+        semesters: semesters.value.length,
+        currentSemester: currentSemester.value,
+        selectedSemesterIndex: selectedSemesterIndex.value,
+        selectedDayIndex: selectedDayIndex.value,
+        loading: loading.value
+      });
     });
 
     return {
       // State
       loading,
       searchQuery,
-      selectedDayNumber,
+      selectedDayIndex,
       selectedSemesterIndex,
       currentSemester,
-      courseNotes,
       isGoingHomeExpanded,
       isGoingHomeChildrenVisible,
       
       // Computed
+      currentSemesterData,
+      currentDayData,
       selectedDayName,
+      filteredStudents,
       filteredCourses,
       waitingListStudents,
       goingHomeStudents,
@@ -1267,7 +2047,6 @@ export default {
       unresolvedProblems,
       daysOfWeek,
       semesters,
-      allCourses,
       
       // Helper functions
       getCourseName,
@@ -1281,6 +2060,7 @@ export default {
       capacityPillClass,
       statusBadgeText,
       isCourseDetailsVisible,
+      toggleCourseDetailsVisibility,
       isNotesVisible,
       toggleNotesVisibility,
       isCourseApproved,
@@ -1300,6 +2080,37 @@ export default {
       onResolveNote,
       onResetToFirstChoices,
       onSemesterChange,
+      autoEnrollStudents,
+      handleFirstChoiceClick,
+      handleSecondChoiceClick,
+      handleThirdChoiceClick,
+              openScheduleModal,
+        closeScheduleModal,
+        openPopoverForm,
+        closePopoverForm,
+        getChildPreferences,
+        getCurrentChoice,
+        getAvailableCoursesForMove,
+        getMovementBlockingReason,
+        getCourseAvailableSpotsForDay,
+        activeScheduleModal,
+        activePopoverForm,
+        popoverPosition,
+        
+        // Notes functionality
+        addNote,
+        toggleNoteProblem,
+        toggleProblemResolved,
+        confirmDelete,
+        deleteNote,
+        startEditNote,
+        cancelEditNote,
+        saveEditNote,
+        newNoteText,
+        showAddNote,
+        editingNote,
+        editNoteText,
+        formatTimestamp,
       
       // Props
       content: props.content,
@@ -1680,7 +2491,7 @@ export default {
     font-size: 12px;
     width: 100%;
     background-color: transparent;
-    border: 1px solid #d1d5db;
+    border: none;
     border-radius: 4px;
     transition: all 0.2s ease;
     cursor: pointer;
@@ -1727,6 +2538,13 @@ export default {
       border: 2px solid #f97316;
       background-color: #fff7ed;
     }
+
+    &--locked {
+      background-color: #f3f4f6;
+      border-color: #d1d5db;
+      color: #9ca3af;
+      cursor: not-allowed;
+    }
   }
 
   &__going-home-wait-btn {
@@ -1735,7 +2553,7 @@ export default {
     padding: 0;
     font-size: 12px;
     background-color: #f3f4f6;
-    border: 1px solid #d1d5db;
+    border: none;
     border-radius: 4px;
     cursor: pointer;
     transition: background-color 0.2s ease;
@@ -1886,7 +2704,7 @@ export default {
     padding: 0 8px;
     font-size: 12px;
     background-color: transparent;
-    border: 1px solid #d1d5db;
+    border: none;
     border-radius: 4px;
     transition: all 0.2s ease;
     cursor: pointer;
@@ -1931,6 +2749,13 @@ export default {
       border: 2px solid #f97316;
       background-color: #fff7ed;
     }
+
+    &--locked {
+      background-color: #f3f4f6;
+      border-color: #d1d5db;
+      color: #9ca3af;
+      cursor: not-allowed;
+    }
   }
 
   &__waiting-list-wait-btn {
@@ -1939,7 +2764,7 @@ export default {
     padding: 0;
     font-size: 12px;
     background-color: #f3f4f6;
-    border: 1px solid #d1d5db;
+    border: none;
     border-radius: 4px;
     cursor: pointer;
     transition: background-color 0.2s ease;
@@ -2071,12 +2896,12 @@ export default {
   &__course-lock-btn {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 4px 8px;
-    font-size: 12px;
+    gap: 6px;
+    padding: 6px 12px;
+    font-size: 13px;
     background-color: transparent;
-    border: 1px solid #d1d5db;
-    border-radius: 4px;
+    border: none;
+    border-radius: 6px;
     cursor: pointer;
     transition: all 0.2s ease;
     color: #6b7280;
@@ -2088,19 +2913,17 @@ export default {
 
     &--locked {
       background-color: #dc2626;
-      border-color: #dc2626;
       color: #ffffff;
 
       &:hover {
         background-color: #b91c1c;
-        border-color: #b91c1c;
       }
     }
   }
 
   &__course-lock-icon {
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
     stroke: currentColor;
     fill: none;
   }
@@ -2108,12 +2931,12 @@ export default {
   &__course-approval-btn {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 4px 8px;
-    font-size: 12px;
+    gap: 6px;
+    padding: 6px 12px;
+    font-size: 13px;
     background-color: transparent;
-    border: 1px solid #d1d5db;
-    border-radius: 4px;
+    border: none;
+    border-radius: 6px;
     cursor: pointer;
     transition: all 0.2s ease;
     color: #6b7280;
@@ -2125,19 +2948,17 @@ export default {
 
     &--approved {
       background-color: #dcfce7;
-      border-color: #bbf7d0;
       color: #166534;
 
       &:hover {
         background-color: #bbf7d0;
-        border-color: #86efac;
       }
     }
   }
 
   &__course-approval-icon {
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
     stroke: currentColor;
     fill: none;
   }
@@ -2152,12 +2973,12 @@ export default {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 20px;
-    height: 20px;
+    width: 28px;
+    height: 28px;
     padding: 0;
-    font-size: 12px;
+    font-size: 13px;
     background-color: transparent;
-    border: 1px solid #d1d5db;
+    border: none;
     border-radius: 4px;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -2271,6 +3092,270 @@ export default {
     fill: none;
   }
 
+  &__course-notes-problem-icon {
+    width: 8px;
+    height: 8px;
+    stroke: #dc2626;
+    fill: none;
+  }
+
+  &__course-notes {
+    margin-bottom: 8px;
+  }
+
+  &__course-notes-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+
+  &__course-note {
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    border: 1px solid #e5e7eb;
+
+    &--problem {
+      background-color: #fef2f2;
+      border-color: #fecaca;
+    }
+
+    &--resolved {
+      background-color: #f0fdf4;
+      border-color: #bbf7d0;
+    }
+
+    &--normal {
+      background-color: #f9fafb;
+      border-color: #e5e7eb;
+    }
+  }
+
+  &__course-note-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+
+  &__course-note-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+  }
+
+  &__course-note-author {
+    font-weight: 500;
+    color: #374151;
+  }
+
+  &__course-note-timestamp {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    color: #6b7280;
+    font-size: 11px;
+  }
+
+  &__course-note-clock-icon {
+    width: 8px;
+    height: 8px;
+    stroke: currentColor;
+    fill: none;
+  }
+
+  &__course-note-problem-badge {
+    font-size: 10px;
+    padding: 1px 4px;
+    background-color: #dc2626;
+    color: #ffffff;
+    border-radius: 2px;
+    font-weight: 500;
+  }
+
+  &__course-note-resolved-badge {
+    font-size: 10px;
+    padding: 1px 4px;
+    background-color: #16a34a;
+    color: #ffffff;
+    border-radius: 2px;
+    font-weight: 500;
+  }
+
+  &__course-note-actions {
+    display: flex;
+    gap: 4px;
+  }
+
+  &__course-note-action-btn {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    background-color: transparent;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+
+    &:hover {
+      background-color: #f3f4f6;
+    }
+
+    &--problem {
+      color: #dc2626;
+      background-color: #fef2f2;
+
+      &:hover {
+        background-color: #fee2e2;
+      }
+    }
+
+    &--resolve {
+      color: #16a34a;
+
+      &:hover {
+        background-color: #f0fdf4;
+      }
+    }
+
+    &--edit {
+      color: #2563eb;
+
+      &:hover {
+        background-color: #eff6ff;
+      }
+    }
+
+    &--delete {
+      color: #dc2626;
+
+      &:hover {
+        background-color: #fef2f2;
+      }
+    }
+
+    &--save {
+      color: #16a34a;
+
+      &:hover {
+        background-color: #f0fdf4;
+      }
+    }
+
+    &--cancel {
+      color: #6b7280;
+
+      &:hover {
+        background-color: #f3f4f6;
+      }
+    }
+  }
+
+  &__course-note-action-icon {
+    width: 14px;
+    height: 14px;
+    stroke: currentColor;
+    fill: none;
+  }
+
+  &__course-note-edit {
+    margin-bottom: 4px;
+  }
+
+  &__course-note-edit-form {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+
+  &__course-note-edit-input {
+    flex: 1;
+    padding: 4px 6px;
+    border: 1px solid #d1d5db;
+    border-radius: 2px;
+    font-size: 12px;
+    background-color: #ffffff;
+
+    &:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.1);
+    }
+  }
+
+  &__course-note-text {
+    color: #374151;
+    line-height: 1.4;
+  }
+
+  &__course-note-add {
+    margin-top: 8px;
+  }
+
+  &__course-note-add-form {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+
+  &__course-note-add-input {
+    flex: 1;
+    padding: 4px 6px;
+    border: 1px solid #d1d5db;
+    border-radius: 2px;
+    font-size: 12px;
+    background-color: #ffffff;
+
+    &:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.1);
+    }
+
+    &::placeholder {
+      color: #9ca3af;
+    }
+  }
+
+  &__course-note-add-btn {
+    padding: 6px 12px;
+    background-color: #2563eb;
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+
+    &:hover {
+      background-color: #1d4ed8;
+    }
+  }
+
+  &__course-note-cancel-btn {
+    padding: 6px 12px;
+    background-color: transparent;
+    color: #6b7280;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    &:hover {
+      background-color: #f3f4f6;
+      color: #374151;
+    }
+  }
+
   &__course-participants {
     display: flex;
     flex-direction: column;
@@ -2333,8 +3418,8 @@ export default {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 16px;
-    height: 16px;
+    width: 20px;
+    height: 20px;
     padding: 0;
     background-color: transparent;
     border: none;
@@ -2348,8 +3433,8 @@ export default {
   }
 
   &__course-participants-toggle-icon {
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
     stroke: currentColor;
     fill: none;
   }
@@ -2395,7 +3480,7 @@ export default {
     font-size: 12px;
     width: 100%;
     background-color: transparent;
-    border: 1px solid #d1d5db;
+    border: none;
     border-radius: 4px;
     transition: all 0.2s ease;
     cursor: pointer;
@@ -2440,6 +3525,13 @@ export default {
       border: 2px solid #f97316;
       background-color: #fff7ed;
     }
+
+    &--locked {
+      background-color: #f3f4f6;
+      border-color: #d1d5db;
+      color: #9ca3af;
+      cursor: not-allowed;
+    }
   }
 
   &__course-participants-wait-btn {
@@ -2448,7 +3540,7 @@ export default {
     padding: 0;
     font-size: 12px;
     background-color: #f3f4f6;
-    border: 1px solid #d1d5db;
+    border: none;
     border-radius: 4px;
     cursor: pointer;
     transition: background-color 0.2s ease;
@@ -3125,4 +4217,406 @@ export default {
 .hover\:bg-green-200:hover { background-color: #bbf7d0; }
 .border-0 { border-width: 0px; }
 .transition-colors { transition-property: color, background-color, border-color, text-decoration-color, fill, stroke; transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); transition-duration: 150ms; }
+
+/* Modal styles */
+.course-distribution__schedule-chip--clickable {
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background-color: #e5e7eb;
+    border-color: #9ca3af;
+  }
+
+  &:active {
+    background-color: #d1d5db;
+  }
+}
+
+.course-distribution__popover-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  pointer-events: auto;
+}
+
+.course-distribution__popover {
+  position: fixed;
+  background-color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  width: 256px;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 8px;
+  pointer-events: auto;
+  z-index: 1001;
+}
+
+.course-distribution__modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.course-distribution__modal-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+}
+
+.course-distribution__modal-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  color: #6b7280;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background-color: #f3f4f6;
+    color: #374151;
+  }
+}
+
+.course-distribution__modal-close-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.course-distribution__modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.course-distribution__modal-day-title {
+  font-size: 12px;
+  margin: 0 0 8px 0;
+  color: #374151;
+}
+
+.course-distribution__modal-current-choice {
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  background-color: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 6px;
+}
+
+.course-distribution__modal-current-text {
+  font-size: 14px;
+  color: #0369a1;
+  margin: 0;
+}
+
+.course-distribution__modal-preferences {
+  margin-bottom: 16px;
+}
+
+.course-distribution__modal-preferences-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #6b7280;
+  margin: 0 0 8px 0;
+}
+
+.course-distribution__modal-preferences-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.course-distribution__modal-preference-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background-color 0.2s ease;
+
+  &--active {
+    background-color: #f0f9ff;
+  }
+}
+
+.course-distribution__modal-preference-label {
+  font-size: 12px;
+  color: #374151;
+}
+
+.course-distribution__modal-preference-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background-color: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  font-size: 12px;
+  color: #374151;
+  transition: all 0.2s ease;
+
+  &--active {
+    background-color: #3b82f6;
+    border-color: #3b82f6;
+    color: #ffffff;
+  }
+
+  &--clickable {
+    cursor: pointer;
+
+    &:hover {
+      background-color: #e5e7eb;
+      border-color: #9ca3af;
+    }
+  }
+}
+
+.course-distribution__modal-preference-capacity {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.course-distribution__modal-course-details {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 16px;
+}
+
+.course-distribution__modal-course-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #6b7280;
+  margin: 0 0 12px 0;
+}
+
+.course-distribution__modal-enrolled-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.course-distribution__modal-enrolled-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  background-color: #f9fafb;
+  border-radius: 4px;
+}
+
+.course-distribution__modal-enrolled-name {
+  font-size: 12px;
+  color: #374151;
+}
+
+.course-distribution__modal-move-select {
+  padding: 2px 6px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 11px;
+  background-color: #ffffff;
+  color: #374151;
+  cursor: pointer;
+
+  &:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+  }
+}
+
+.course-distribution__modal-no-students {
+  font-size: 12px;
+  color: #6b7280;
+  text-align: center;
+  padding: 8px;
+}
+
+.course-distribution__modal-actions {
+  margin-top: 16px;
+}
+
+.course-distribution__modal-action-btn {
+  width: 100%;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &--default {
+    background-color: #3b82f6;
+    color: #ffffff;
+
+    &:hover {
+      background-color: #2563eb;
+    }
+  }
+
+  &--destructive {
+    background-color: #ef4444;
+    color: #ffffff;
+
+    &:hover {
+      background-color: #dc2626;
+    }
+  }
+}
+
+/* Inline Form Styles (matching React's renderPopoverInlineForm) */
+.course-distribution__modal-inline-form {
+  margin-top: 8px;
+  padding: 8px;
+  background-color: rgba(0, 0, 0, 0.05);
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.course-distribution__modal-inline-form-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.course-distribution__modal-inline-form-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.course-distribution__modal-inline-form-course-name {
+  font-size: 12px;
+  color: #374151;
+}
+
+.course-distribution__modal-inline-form-badge {
+  display: inline-block;
+  padding: 1px 4px;
+  background-color: transparent;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.course-distribution__modal-inline-form-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 2px;
+  color: #6b7280;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background-color: #f3f4f6;
+    color: #374151;
+  }
+}
+
+.course-distribution__modal-inline-form-close-icon {
+  width: 8px;
+  height: 8px;
+}
+
+.course-distribution__modal-inline-form-enrolled {
+  margin-bottom: 8px;
+}
+
+.course-distribution__modal-inline-form-enrolled-title {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 0 0 4px 0;
+}
+
+.course-distribution__modal-inline-form-enrolled-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.course-distribution__modal-inline-form-enrolled-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 4px;
+  background-color: rgba(255, 255, 255, 0.8);
+  border-radius: 2px;
+}
+
+.course-distribution__modal-inline-form-enrolled-name {
+  font-size: 12px;
+  color: #374151;
+}
+
+.course-distribution__modal-inline-form-move-select {
+  height: 16px;
+  width: 64px;
+  font-size: 12px;
+  padding: 0 4px;
+  border: 1px solid #d1d5db;
+  border-radius: 2px;
+  background-color: #ffffff;
+  color: #374151;
+  cursor: pointer;
+
+  &:focus {
+    outline: none;
+    border-color: #3b82f6;
+  }
+}
+
+.course-distribution__modal-inline-form-no-students {
+  margin-bottom: 8px;
+  padding: 4px;
+  text-align: center;
+}
+
+.course-distribution__modal-inline-form-no-students-text {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 0;
+}
+
+.course-distribution__modal-inline-form-action-btn {
+  height: 20px;
+  padding: 0 8px;
+  font-size: 12px;
+  width: 100%;
+  border: none;
+  border-radius: 4px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &--default {
+    background-color: #3b82f6;
+    color: #ffffff;
+
+    &:hover {
+      background-color: #2563eb;
+    }
+  }
+
+  &--destructive {
+    background-color: #ef4444;
+    color: #ffffff;
+
+    &:hover {
+      background-color: #dc2626;
+    }
+  }
+}
 </style>
